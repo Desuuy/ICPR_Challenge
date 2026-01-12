@@ -38,10 +38,10 @@ def get_degradation_transforms() -> A.Compose:
     return A.Compose([
         A.OneOf([
             A.GaussianBlur(blur_limit=(3, 5), p=1.0),
-            A.MotionBlur(blur_limit=(3, 7), p=1.0)
+            A.MotionBlur(blur_limit=(3, 5), p=1.0)
         ], p=0.7),
         A.OneOf([
-            A.GaussNoise(p=1.0),
+            A.GaussNoise(std_range=(0.05, 0.1), p=1.0),
             A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=1.0)
         ], p=0.7),
         A.ImageCompression(quality_range=(20, 50), p=0.5),

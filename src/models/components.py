@@ -1,4 +1,6 @@
 """Reusable model components for multi-frame OCR."""
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -91,3 +93,178 @@ class SequenceModeler(nn.Module):
         """Process sequence through LSTM."""
         output, _ = self.rnn(x)
         return output
+
+
+class BasicBlock(nn.Module):
+    """Basic residual block for ResNet-18/34."""
+    
+    expansion = 1
+    
+    def __init__(self, in_channels: int, out_channels: int, stride: tuple = (1, 1)):
+        super().__init__()
+        self.conv1 = nn.Conv2d(
+            in_channels, out_channels, kernel_size=3,
+            stride=stride, padding=1, bias=False
+        )
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(
+            out_channels, out_channels, kernel_size=3,
+            stride=1, padding=1, bias=False
+        )
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        
+        self.shortcut = nn.Sequential()
+        if stride != (1, 1) or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out += self.shortcut(x)
+        return F.relu(out)
+
+
+class ResNetFeatureExtractor(nn.Module):
+    """ResNet-based feature extractor optimized for OCR.
+    
+    Uses modified strides to preserve width (sequence length) while reducing height.
+    For H=32, W=128 input: outputs [B, 512, 2, 64].
+    """
+    
+    def __init__(self, layers: int = 18):
+        """
+        Args:
+            layers: ResNet variant (18 or 34).
+        """
+        super().__init__()
+        if layers == 18:
+            num_blocks = [2, 2, 2, 2]
+        elif layers == 34:
+            num_blocks = [3, 4, 6, 3]
+        else:
+            raise ValueError(f"Unsupported ResNet layers: {layers}. Use 18 or 34.")
+        
+        self.in_channels = 64
+        
+        # Initial conv: stride (2, 2) reduces both H and W
+        self.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=(2, 2), padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.relu = nn.ReLU(inplace=True)
+        
+        # ResNet layers with asymmetric strides to preserve width
+        self.layer1 = self._make_layer(64, num_blocks[0], stride=(1, 1))
+        self.layer2 = self._make_layer(128, num_blocks[1], stride=(2, 1))  # H/2, W same
+        self.layer3 = self._make_layer(256, num_blocks[2], stride=(2, 1))  # H/2, W same
+        self.layer4 = self._make_layer(512, num_blocks[3], stride=(2, 1))  # H/2, W same
+        
+        self._init_weights()
+    
+    def _make_layer(self, out_channels: int, num_blocks: int, stride: tuple) -> nn.Sequential:
+        strides = [stride] + [(1, 1)] * (num_blocks - 1)
+        layers = []
+        for s in strides:
+            layers.append(BasicBlock(self.in_channels, out_channels, s))
+            self.in_channels = out_channels
+        return nn.Sequential(*layers)
+    
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Input tensor [B, 3, H, W].
+        
+        Returns:
+            Feature tensor [B, 512, H', W'] where H'=H/16, W'=W/2.
+        """
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        return x
+
+
+class PositionalEncoding(nn.Module):
+    """Sinusoidal positional encoding for transformer models."""
+    
+    def __init__(self, d_model: int, max_len: int = 5000, dropout: float = 0.1):
+        """
+        Args:
+            d_model: Model dimension.
+            max_len: Maximum sequence length.
+            dropout: Dropout rate.
+        """
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+        
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0)  # [1, max_len, d_model]
+        self.register_buffer('pe', pe)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Input tensor [B, seq_len, d_model].
+        
+        Returns:
+            Position-encoded tensor [B, seq_len, d_model].
+        """
+        x = x + self.pe[:, :x.size(1), :]
+        return self.dropout(x)
+
+
+class TransformerSequenceModeler(nn.Module):
+    """Transformer encoder for sequence modeling with positional encoding."""
+    
+    def __init__(
+        self,
+        d_model: int,
+        nhead: int = 8,
+        num_layers: int = 3,
+        dim_feedforward: int = 2048,
+        dropout: float = 0.1
+    ):
+        """
+        Args:
+            d_model: Model dimension.
+            nhead: Number of attention heads.
+            num_layers: Number of encoder layers.
+            dim_feedforward: Feedforward network dimension.
+            dropout: Dropout rate.
+        """
+        super().__init__()
+        self.pos_encoder = PositionalEncoding(d_model, dropout=dropout)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            batch_first=True,
+            activation='gelu'
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Input tensor [B, seq_len, d_model].
+        
+        Returns:
+            Encoded tensor [B, seq_len, d_model].
+        """
+        x = self.pos_encoder(x)
+        return self.transformer(x)

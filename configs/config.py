@@ -8,6 +8,10 @@ import torch
 class Config:
     """Training configuration with all hyperparameters."""
     
+    # Experiment tracking
+    EXPERIMENT_NAME: str = "baseline"
+    MODEL_TYPE: str = "restran"  # "crnn" or "restran"
+    
     # Data paths
     DATA_ROOT: str = "data/train"
     VAL_SPLIT_FILE: str = "data/val_tracks.json"
@@ -22,17 +26,24 @@ class Config:
     
     # Training hyperparameters
     BATCH_SIZE: int = 64
-    LEARNING_RATE: float = 0.001
-    EPOCHS: int = 30
+    LEARNING_RATE: float = 0.0001
+    EPOCHS: int = 15
     SEED: int = 42
     NUM_WORKERS: int = 15
     WEIGHT_DECAY: float = 1e-4
     GRAD_CLIP: float = 5.0
     SPLIT_RATIO: float = 0.9
     
-    # Model hyperparameters
+    # CRNN model hyperparameters
     HIDDEN_SIZE: int = 256
     RNN_DROPOUT: float = 0.25
+    
+    # ResTranOCR model hyperparameters
+    RESNET_LAYERS: int = 18
+    TRANSFORMER_HEADS: int = 8
+    TRANSFORMER_LAYERS: int = 3
+    TRANSFORMER_FF_DIM: int = 2048
+    TRANSFORMER_DROPOUT: float = 0.1
     
     # Device
     DEVICE: torch.device = field(default_factory=lambda: torch.device('cuda' if torch.cuda.is_available() else 'cpu'))

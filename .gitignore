@@ -20,7 +20,7 @@ env/
 best_model.pth
 
 # Outputs & Submission
-submission.txt
+submission_*.txt
 outputs/
 logs/
 

@@ -149,13 +149,18 @@ class Trainer:
         return avg_val_loss, val_acc, submission_data
 
     def save_submission(self, submission_data: List[str]) -> None:
-        """Save submission file."""
-        with open(self.config.SUBMISSION_FILE, 'w') as f:
+        """Save submission file with experiment name."""
+        exp_name = getattr(self.config, 'EXPERIMENT_NAME', 'baseline')
+        filename = f"submission_{exp_name}.txt"
+        with open(filename, 'w') as f:
             f.write("\n".join(submission_data))
-        print(f"📝 Saved {len(submission_data)} lines to {self.config.SUBMISSION_FILE}")
+        print(f"📝 Saved {len(submission_data)} lines to {filename}")
 
-    def save_model(self, path: str = "best_model.pth") -> None:
-        """Save model checkpoint."""
+    def save_model(self, path: str = None) -> None:
+        """Save model checkpoint with experiment name."""
+        if path is None:
+            exp_name = getattr(self.config, 'EXPERIMENT_NAME', 'baseline')
+            path = f"{exp_name}_best.pth"
         torch.save(self.model.state_dict(), path)
 
     def fit(self) -> None:
@@ -176,8 +181,9 @@ class Trainer:
             # Save best model
             if val_acc > self.best_acc:
                 self.best_acc = val_acc
-                self.save_model("best_model.pth")
-                print(f" -> ⭐ Saved Best Model! ({val_acc:.2f}%)")
+                self.save_model()
+                exp_name = getattr(self.config, 'EXPERIMENT_NAME', 'baseline')
+                print(f" -> ⭐ Saved Best Model: {exp_name}_best.pth ({val_acc:.2f}%)")
                 
                 if submission_data:
                     self.save_submission(submission_data)
