@@ -131,7 +131,7 @@ class ResNetFeatureExtractor(nn.Module):
     """ResNet-based feature extractor optimized for OCR.
     
     Uses modified strides to preserve width (sequence length) while reducing height.
-    For H=32, W=128 input: outputs [B, 512, 2, 64].
+    Includes adaptive pooling to ensure final height is 1.
     """
     
     def __init__(self, layers: int = 18):
@@ -184,13 +184,17 @@ class ResNetFeatureExtractor(nn.Module):
             x: Input tensor [B, 3, H, W].
         
         Returns:
-            Feature tensor [B, 512, H', W'] where H'=H/16, W'=W/2.
+            Feature tensor [B, 512, 1, W'].
         """
         x = self.relu(self.bn1(self.conv1(x)))
         x = self.layer1(x)
         x = self.layer2(x)
         x = self.layer3(x)
         x = self.layer4(x)
+        
+        # Force Height to 1 regardless of input height (Robust for H=48 or H=32)
+        x = F.adaptive_avg_pool2d(x, (1, None))
+        
         return x
 
 
@@ -268,3 +272,63 @@ class TransformerSequenceModeler(nn.Module):
         """
         x = self.pos_encoder(x)
         return self.transformer(x)
+
+
+class STNBlock(nn.Module):
+    """Spatial Transformer Network for input image alignment.
+    
+    Learns an affine transformation to spatially align input images.
+    Can handle single images (C=3) or batches.
+    """
+    
+    def __init__(self, in_channels: int = 3):
+        """
+        Args:
+            in_channels: Number of input channels (typically 3 for RGB).
+        """
+        super().__init__()
+        
+        # Lightweight localization network
+        self.localization = nn.Sequential(
+            nn.Conv2d(in_channels, 32, kernel_size=5, stride=2, padding=2),
+            nn.BatchNorm2d(32),
+            nn.ReLU(True),
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(True),
+            nn.AdaptiveAvgPool2d((4, 8)) # Fixed size for FC input
+        )
+        
+        # Regressor for 2x3 affine transformation matrix
+        self.fc_loc = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(64 * 4 * 8, 128),
+            nn.ReLU(True),
+            nn.Linear(128, 6)
+        )
+        
+        # Initialize to identity transformation for stable training
+        self.fc_loc[-1].weight.data.zero_()
+        self.fc_loc[-1].bias.data.copy_(
+            torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float)
+        )
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            x: Input image [B, C, H, W].
+        
+        Returns:
+            Aligned image [B, C, H, W].
+        """
+        # Predict affine transformation parameters
+        xs = self.localization(x)
+        theta = self.fc_loc(xs)
+        theta = theta.view(-1, 2, 3)
+        
+        # Generate sampling grid and apply transformation
+        grid = F.affine_grid(theta, x.size(), align_corners=False)
+        aligned = F.grid_sample(x, grid, align_corners=False)
+        
+        return aligned

@@ -21,7 +21,8 @@ def get_train_transforms(img_height: int = 32, img_width: int = 128) -> A.Compos
             sat_shift_limit=20,
             val_shift_limit=20,
             p=0.3
-        ),
+        ),A.Rotate(limit=10, p=0.3), 
+        A.ChannelShuffle(p=0.3),
         A.CoarseDropout(
             num_holes_range=(1, 3),
             hole_height_range=(4, 8),
@@ -41,7 +42,7 @@ def get_degradation_transforms() -> A.Compose:
             A.MotionBlur(blur_limit=(3, 5), p=1.0)
         ], p=0.7),
         A.OneOf([
-            A.GaussNoise(std_range=(0.05, 0.1), p=1.0),
+            A.GaussNoise(p=1.0),
             A.MultiplicativeNoise(multiplier=(0.9, 1.1), p=1.0)
         ], p=0.7),
         A.ImageCompression(quality_range=(20, 50), p=0.5),

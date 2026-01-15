@@ -8,8 +8,9 @@ from torch.amp import autocast, GradScaler
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.utils.postprocess import decode_with_confidence
+from src.utils.postprocess import decode_with_confidence, decode_beam_search
 from src.utils.common import seed_everything
+from src.training.losses import LabelSmoothingCTCLoss
 
 
 class Trainer:
@@ -40,7 +41,8 @@ class Trainer:
         seed_everything(config.SEED, benchmark=config.USE_CUDNN_BENCHMARK)
         
         # Loss and optimizer
-        self.criterion = nn.CTCLoss(blank=0, zero_infinity=True)
+        smoothing = getattr(config, 'LABEL_SMOOTHING', 0.1)
+        self.criterion = LabelSmoothingCTCLoss(blank=0, smoothing=smoothing, zero_infinity=True)
         self.optimizer = optim.AdamW(
             model.parameters(),
             lr=config.LEARNING_RATE,
@@ -238,7 +240,7 @@ class Trainer:
                 images = images.to(self.device)
                 preds = self.model(images)
                 
-                decoded_list = decode_with_confidence(preds, self.idx2char)
+                decoded_list = decode_beam_search(preds, self.idx2char)
                 for i, (pred_text, conf) in enumerate(decoded_list):
                     results.append((track_ids[i], pred_text, conf))
         

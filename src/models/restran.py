@@ -5,14 +5,16 @@ import torch.nn as nn
 from src.models.components import (
     AttentionFusion,
     ResNetFeatureExtractor,
+    STNBlock,
     TransformerSequenceModeler
 )
 
 
 class ResTranOCR(nn.Module):
-    """ResNet-Transformer OCR model with multi-frame attention fusion.
+    """ResNet-Transformer OCR model with multi-frame attention fusion and input STN.
     
-    Architecture: ResNet Backbone -> Attention Fusion -> Transformer -> FC -> CTC
+    Architecture: 
+    Input -> Shared STN -> ResNet Backbone -> Attention Fusion -> Transformer -> FC -> CTC
     """
     
     def __init__(
@@ -36,14 +38,18 @@ class ResTranOCR(nn.Module):
         super().__init__()
         self.cnn_channels = 512  # ResNet output channels
         
+        # STN: Spatial Transformer Network for INPUT ALIGNMENT
+        # Operates on RGB images (3 channels)
+        self.stn = STNBlock(in_channels=3)
+        
         # Backbone: ResNet feature extractor
         self.backbone = ResNetFeatureExtractor(layers=resnet_layers)
         
         # Fusion: Multi-frame attention
         self.fusion = AttentionFusion(channels=self.cnn_channels)
         
-        # For H=32 input -> ResNet output H'=2, so d_model = 512 * 2 = 1024
-        self.feature_height = 2
+        # ResNetFeatureExtractor now uses AdaptiveAvgPool to force H=1
+        self.feature_height = 1 
         self.d_model = self.cnn_channels * self.feature_height
         
         # Neck: Transformer sequence modeler
@@ -61,29 +67,48 @@ class ResTranOCR(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Args:
-            x: Input tensor [B, T, C, H, W] where T=5 frames.
+            x: Input tensor [B, T, 3, H, W] where T=5 frames.
         
         Returns:
             Log-softmax output [B, W', num_classes] for CTC loss.
         """
         b, t, c, h, w = x.size()
         
-        # Process all frames through CNN backbone
-        x = x.view(b * t, c, h, w)
-        feat = self.backbone(x)  # [B*T, 512, H', W']
+        # --- Shared STN Logic ---
+        # 1. Compute temporal mean of frames to find the "average" pose
+        # Shape: [B, 3, H, W]
+        x_mean = torch.mean(x, dim=1)
         
-        # Fuse multi-frame features
-        fused = self.fusion(feat)  # [B, 512, H', W']
+        # 2. Predict affine transformation parameters based on mean image
+        xs = self.stn.localization(x_mean)
+        theta = self.stn.fc_loc(xs)
+        theta = theta.view(-1, 2, 3)
         
-        # Reshape for transformer: [B, C, H', W'] -> [B, W', C*H']
+        # 3. Apply the SAME transformation to ALL frames
+        # Reshape x to [B*T, 3, H, W]
+        x_flat = x.view(b * t, c, h, w)
+        
+        # Repeat theta for each frame: [B, 2, 3] -> [B, T, 2, 3] -> [B*T, 2, 3]
+        theta_repeated = theta.unsqueeze(1).repeat(1, t, 1, 1).view(b * t, 2, 3)
+        
+        # Generate grid and warp
+        grid = torch.nn.functional.affine_grid(theta_repeated, x_flat.size(), align_corners=False)
+        aligned_images = torch.nn.functional.grid_sample(x_flat, grid, align_corners=False)
+        
+        # --- Backbone ---
+        feat = self.backbone(aligned_images)  # [B*T, 512, 1, W']
+        
+        # --- Fusion ---
+        fused = self.fusion(feat)  # [B, 512, 1, W']
+        
+        # --- Transformer ---
+        # Reshape: [B, C, 1, W'] -> [B, W', C]
         b_out, c_out, h_f, w_f = fused.size()
-        # Permute to [B, W', C, H'] then flatten last two dims
-        seq_input = fused.permute(0, 3, 1, 2).reshape(b_out, w_f, c_out * h_f)
+        seq_input = fused.squeeze(2).permute(0, 2, 1) # [B, W', C]
         
-        # Transformer sequence modeling
         seq_out = self.neck(seq_input)  # [B, W', d_model]
         
-        # Classification
+        # --- Head ---
         out = self.fc(seq_out)  # [B, W', num_classes]
         
         return out.log_softmax(2)
