@@ -5,7 +5,7 @@ import torch.nn.functional as F
 
 from src.models.components import AttentionFusion, CNNBackbone, STNBlock
 
-
+# Block Text Recognition
 class MultiFrameCRNN(nn.Module):
     """
     Standard CRNN architecture adapted for Multi-frame input with optional STN alignment.
