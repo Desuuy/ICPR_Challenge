@@ -11,7 +11,7 @@ This implementation combines temporal information from 5 video frames using atte
 ## Quick Start
 
 ```bash
-# Active venvvenv
+# Active venv
 .\.venv\Scripts\Activate.ps1
 
 # Install dependencies
@@ -63,7 +63,7 @@ Modern architecture leveraging ResNet34 backbone and Transformer encoder with po
 
 **Using uv (recommended):**
 ```bash
-git clone https://github.com/duongtruongbinh/MultiFrame-LPR.git
+git clone https://github.com/Desuuy/ICPR_Challenge.git
 cd MultiFrame-LPR
 uv sync
 ```
