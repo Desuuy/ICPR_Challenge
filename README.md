@@ -216,4 +216,4 @@ Dynamically computes attention weights across temporal frames and fuses multi-fr
 ### Data Augmentation
 - **Full mode**: Affine transforms, perspective warping, HSV adjustment, coarse dropout
 - **Light mode**: Resize and normalize only
-- **Scenario-B aware splitting**: Validation set prioritizes challenging scenarios to prevent overfitting
+- **Scenario-B aware splitting**: Validation set prioritizes challenging scenarios to prevent overfitting# ICPR_Challenge
