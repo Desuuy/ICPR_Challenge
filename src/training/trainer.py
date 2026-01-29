@@ -217,7 +217,7 @@ class Trainer:
                   f"Val Acc: {val_acc:.2f}% | "
                   f"LR: {current_lr:.2e}")
             
-            # Save best model
+            # Save best model (theo val accuracy)
             if val_acc > self.best_acc:
                 self.best_acc = val_acc
                 self.save_model()
@@ -228,12 +228,18 @@ class Trainer:
                 if submission_data:
                     self.save_submission(submission_data)
         
-        # Save final model if no validation was performed (submission mode)
+        # Luôn lưu .pth khi chạy xong (cả SUBMISSION_MODE True/False)
+        exp_name = self._get_exp_name()
         if self.val_loader is None:
+            # Submission mode: best đã là model cuối, lưu vào _best.pth
             self.save_model()
-            exp_name = self._get_exp_name()
             model_path = self._get_output_path(f"{exp_name}_best.pth")
-            print(f"  💾 Saved final model: {model_path}")
+            print(f"  💾 Saved model: {model_path}")
+        else:
+            # Normal mode: lưu thêm bản cuối cùng vào _final.pth
+            final_path = self._get_output_path(f"{exp_name}_final.pth")
+            torch.save(self.model.state_dict(), final_path)
+            print(f"  💾 Saved final model: {final_path}")
         
         print(f"\n✅ Training complete! Best Val Acc: {self.best_acc:.2f}%")
 

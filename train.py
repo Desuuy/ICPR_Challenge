@@ -4,6 +4,9 @@ import argparse
 import os
 import sys
 
+# Giảm phân mảnh CUDA (tránh OOM do fragmentation)
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import torch
 from torch.utils.data import DataLoader
 
@@ -15,7 +18,8 @@ from src.data.dataset import MultiFrameDataset
 from src.models.crnn import MultiFrameCRNN
 from src.models.restran import ResTranOCR
 from src.training.trainer import Trainer
-from src.utils.common import seed_everything
+from src.utils.common import seed_everything, clear_cuda_cache_and_report, print_model_memory_requirement
+from src.mf_svtrv2 import MultiFrameSVTRv2
 
 
 def parse_args() -> argparse.Namespace:
@@ -28,8 +32,8 @@ def parse_args() -> argparse.Namespace:
         help="Experiment name for checkpoint/submission files (default: from config)"
     )
     parser.add_argument(
-        "-m", "--model", type=str, choices=["crnn", "restran"], default=None,
-        help="Model architecture: 'crnn' or 'restran' (default: from config)"
+        "-m", "--model", type=str, choices=["crnn", "restran", "mf_svtrv2"], default=None,
+        help="Model architecture: 'crnn', 'restran' or 'mf_svtrv2' (default: from config)"
     )
     parser.add_argument(
         "--epochs", type=int, default=None,
@@ -114,6 +118,9 @@ def main():
         'hidden_size': 'HIDDEN_SIZE',
         'transformer_heads': 'TRANSFORMER_HEADS',
         'transformer_layers': 'TRANSFORMER_LAYERS',
+        'svtr_dims': 'SVTR_DIMS',
+        'svtr_depths': 'SVTR_DEPTHS',
+        'svtr_heads': 'SVTR_HEADS',
     }
     
     for arg_name, config_name in arg_to_config.items():
@@ -133,6 +140,10 @@ def main():
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
     
     seed_everything(config.SEED)
+
+    # Làm trống cache CUDA và in bộ nhớ GPU mỗi lần chạy
+    if config.DEVICE.type == "cuda":
+        clear_cuda_cache_and_report()
     
     print(f"🚀 Configuration:")
     print(f"   EXPERIMENT: {config.EXPERIMENT_NAME}")
@@ -241,9 +252,21 @@ def main():
         num_workers=config.NUM_WORKERS,
         pin_memory=True
     )
-
+    
+    # For mf_svtrv2, restran and crnn
     # Initialize model based on config
-    if config.MODEL_TYPE == "restran":
+    if config.MODEL_TYPE == "mf_svtrv2":
+        model = MultiFrameSVTRv2(
+            num_classes=config.NUM_CLASSES,
+            use_stn=config.USE_STN,
+        ).to(config.DEVICE)
+        
+        # Nạp trọng số Pretrained UniRec40M
+        if hasattr(config, 'PRETRAINED_PATH') and os.path.exists(config.PRETRAINED_PATH):
+            print(f"🔄 Loading SVTRv2-B Pretrained Weights: {config.PRETRAINED_PATH}")
+            # Chỉ cần gọi load_weights, bên trong hàm đó sẽ gọi load_unirec_weights
+            model.load_weights(config.PRETRAINED_PATH)
+    elif config.MODEL_TYPE == "restran":
         model = ResTranOCR(
             num_classes=config.NUM_CLASSES,
             transformer_heads=config.TRANSFORMER_HEADS,
@@ -259,8 +282,10 @@ def main():
             rnn_dropout=config.RNN_DROPOUT,
             use_stn=config.USE_STN,
         ).to(config.DEVICE)
-    
-    # Print model summary
+
+
+    # In số lượng bộ nhớ cần để chạy model
+    print_model_memory_requirement(model, config.BATCH_SIZE, config.DEVICE)
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"📊 Model ({config.MODEL_TYPE}): {total_params:,} total params, {trainable_params:,} trainable")

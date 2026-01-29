@@ -11,6 +11,9 @@ This implementation combines temporal information from 5 video frames using atte
 ## Quick Start
 
 ```bash
+# Active venvvenv
+.\.venv\Scripts\Activate.ps1
+
 # Install dependencies
 uv sync
 
