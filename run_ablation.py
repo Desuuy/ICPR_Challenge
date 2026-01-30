@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Automation script to run ablation experiments for STN impact analysis (CRNN vs ResTran34)."""
+"""Automation script to run ablation experiments for STN impact analysis (CRNN vs ResTran34 vs SVTRv2)."""
 
 import os
 import subprocess
@@ -7,17 +7,51 @@ import sys
 from typing import Any, Dict, List, Optional
 
 
+def get_python_executable() -> str:
+    """Tìm Python executable từ venv hoặc dùng sys.executable."""
+    # Kiểm tra venv trong project
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    venv_python = None
+
+    # Thử .venv (uv/pipenv style)
+    venv_path = os.path.join(script_dir, ".venv", "Scripts", "python.exe")
+    if os.path.exists(venv_path):
+        venv_python = venv_path
+
+    # Thử venv (standard)
+    if not venv_python:
+        venv_path = os.path.join(script_dir, "venv", "Scripts", "python.exe")
+        if os.path.exists(venv_path):
+            venv_python = venv_path
+
+    # Thử env
+    if not venv_python:
+        venv_path = os.path.join(script_dir, "env", "Scripts", "python.exe")
+        if os.path.exists(venv_path):
+            venv_python = venv_path
+
+    if venv_python:
+        print(f"✅ Using venv Python: {venv_python}")
+        return venv_python
+
+    # Fallback: dùng sys.executable hoặc python
+    python_exe = sys.executable or "python"
+    print(
+        f"⚠️ Using system Python: {python_exe} (consider activating venv first)")
+    return python_exe
+
+
 def build_command(experiment_config: Dict[str, Any], output_dir: str = "experiments") -> List[str]:
     """Build the python3 train.py command from an experiment configuration.
-    
+
     Args:
         experiment_config: Dictionary containing experiment parameters.
         output_dir: Directory to save experiment outputs.
-    
+
     Returns:
         List of command line arguments.
     """
-    cmd: List[str] = [sys.executable or "python3", "train.py"]
+    cmd: List[str] = [get_python_executable(), "train.py"]
 
     # Basic arguments
     if "experiment_name" in experiment_config:
@@ -26,10 +60,10 @@ def build_command(experiment_config: Dict[str, Any], output_dir: str = "experime
         cmd += ["-m", str(experiment_config["model"])]
     if "aug_level" in experiment_config:
         cmd += ["--aug-level", str(experiment_config["aug_level"])]
-    
+
     # Always set output directory
     cmd += ["--output-dir", output_dir]
-    
+
     # Handle extra flags (like --no-stn)
     for flag in experiment_config.get("extra_flags", []):
         cmd.append(str(flag))
@@ -39,10 +73,10 @@ def build_command(experiment_config: Dict[str, Any], output_dir: str = "experime
 
 def _parse_best_accuracy(log_path: str) -> Optional[float]:
     """Parse best validation accuracy from log file.
-    
+
     Args:
         log_path: Path to the log file.
-    
+
     Returns:
         Best validation accuracy as float, or None if not found.
     """
@@ -53,14 +87,16 @@ def _parse_best_accuracy(log_path: str) -> Optional[float]:
                 for pattern in ["Best Val Acc:", "Best accuracy:", "Best Val Acc:"]:
                     if pattern in line:
                         try:
-                            token = line.split(pattern)[1].strip().split("%")[0]
+                            token = line.split(pattern)[
+                                1].strip().split("%")[0]
                             return float(token)
                         except (ValueError, IndexError):
                             continue
 
                 if "Training complete! Best Val Acc:" in line:
                     try:
-                        token = line.split("Best Val Acc:")[1].strip().split("%")[0]
+                        token = line.split("Best Val Acc:")[
+                            1].strip().split("%")[0]
                         return float(token)
                     except (ValueError, IndexError):
                         continue
@@ -70,10 +106,21 @@ def _parse_best_accuracy(log_path: str) -> Optional[float]:
 
 
 def main() -> None:
+    """Main entry point for ablation experiments."""
+    # Kiểm tra venv trước khi chạy
+    python_exe = get_python_executable()
+    if "venv" not in python_exe.lower() and "env" not in python_exe.lower():
+        print("\n⚠️  WARNING: Not using venv Python!")
+        print("   Script sẽ dùng Python hệ thống, có thể gặp lỗi CUDA DLL.")
+        print("   Khuyến nghị: Activate venv trước khi chạy:")
+        print("      .venv\\Scripts\\Activate.ps1  (PowerShell)")
+        print("      .venv\\Scripts\\activate.bat  (CMD)")
+        print()
+
     experiments_dir = "experiments"
     os.makedirs(experiments_dir, exist_ok=True)
 
-    # Define the 4 experiments for STN ablation study
+    # Define the 6 experiments for STN ablation study
     # Default behavior uses STN; pass "--no-stn" to disable it.
     experiments: List[Dict[str, Any]] = [
         # 1. CRNN without STN
@@ -108,6 +155,22 @@ def main() -> None:
             "aug_level": "full",
             # No extra flags -> Default uses STN
         },
+        # 5. SVTRv2 without STN
+        {
+            "name": "mf_svtrv2_no_stn",
+            "experiment_name": "mf_svtrv2_no_stn",
+            "model": "mf_svtrv2",
+            "aug_level": "full",
+            "extra_flags": ["--no-stn"]  # Flag to disable STN
+        },
+        # 6. SVTRv2 with STN
+        {
+            "name": "mf_svtrv2_with_stn",
+            "experiment_name": "mf_svtrv2_with_stn",
+            "model": "mf_svtrv2",
+            "aug_level": "full",
+            # No extra flags -> Default uses STN
+        },
     ]
 
     results_summary: List[Dict[str, Any]] = []
@@ -121,17 +184,30 @@ def main() -> None:
         print("Command:", " ".join(cmd))
 
         try:
+            # Set PYTHONPATH để Python tìm được module 'openrec' trong src/
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            src_dir = os.path.join(script_dir, "src")
+            env = os.environ.copy()
+            # Thêm src/ vào PYTHONPATH nếu chưa có
+            pythonpath = env.get("PYTHONPATH", "")
+            if pythonpath:
+                env["PYTHONPATH"] = f"{src_dir}{os.pathsep}{pythonpath}"
+            else:
+                env["PYTHONPATH"] = src_dir
+
             with open(log_path, "w") as log_file:
                 process = subprocess.run(
                     cmd,
                     stdout=log_file,
                     stderr=subprocess.STDOUT,
                     text=True,
-                    cwd=os.path.dirname(os.path.abspath(__file__)),
+                    cwd=script_dir,
+                    env=env,  # Truyền env với PYTHONPATH đã set
                 )
 
             if process.returncode != 0:
-                print(f"[{experiment_name}] FAILED with return code {process.returncode}. See {log_path}")
+                print(
+                    f"[{experiment_name}] FAILED with return code {process.returncode}. See {log_path}")
                 results_summary.append(
                     {"name": experiment_name, "best_acc": None}
                 )
@@ -159,7 +235,7 @@ def main() -> None:
         header = f"{'Experiment':25s} | {'Best Acc (%)':12s}"
         summary_lines.append(header)
         summary_lines.append("-" * len(header))
-        
+
         for row in results_summary:
             name = str(row["name"])
             best_acc = (
@@ -168,10 +244,10 @@ def main() -> None:
                 else "N/A"
             )
             summary_lines.append(f"{name:25s} | {best_acc:12s}")
-        
+
         summary_text = "\n".join(summary_lines)
         print("\n" + summary_text)
-        
+
         # Save to file
         summary_file = os.path.join(experiments_dir, "ablation_summary.txt")
         with open(summary_file, "w") as f:
