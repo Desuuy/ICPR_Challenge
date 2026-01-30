@@ -1,9 +1,6 @@
 """Models module containing network architectures."""
 from src.models.crnn import MultiFrameCRNN
 from src.models.restran import ResTranOCR
-# MultiFrameSVTRv2 nằm ở src.mf_svtrv2, không phải src.models
-#from src.models import MultiFrameSVTRv2
-from src.mf_svtrv2 import MultiFrameSVTRv2
 
 from src.models.components import (
     AttentionFusion,
@@ -15,9 +12,12 @@ from src.models.components import (
 __all__ = [
     "MultiFrameCRNN",
     "ResTranOCR",
-    "MultiFrameSVTRv2", # Thêm vào danh sách export
     "AttentionFusion",
     "CNNBackbone",
     "ResNetFeatureExtractor",
     "PositionalEncoding",
 ]
+
+# NOTE: MultiFrameSVTRv2 không được import ở đây để tránh circular import.
+# Nó nằm ở src.mf_svtrv2 và được import trực tiếp trong train.py:
+#   from src.mf_svtrv2 import MultiFrameSVTRv2
