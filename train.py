@@ -153,6 +153,9 @@ def main():
     print(f"   BATCH_SIZE: {config.BATCH_SIZE}")
     print(f"   LEARNING_RATE: {config.LEARNING_RATE}")
     print(f"   DEVICE: {config.DEVICE}")
+    use_focal = getattr(config, 'USE_FOCAL_CTC', False)
+    print(
+        f"   USE_FOCAL_CTC: {use_focal}  ->  LOSS: {'Focal CTC' if use_focal else 'CTC'}")
     print(f"   SUBMISSION_MODE: {args.submission_mode}")
 
     # Validate data path

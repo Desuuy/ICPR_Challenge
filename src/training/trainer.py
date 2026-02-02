@@ -83,8 +83,14 @@ class Trainer:
         epoch_loss = 0.0
         pbar = tqdm(self.train_loader,
                     desc=f"Ep {self.current_epoch + 1}/{self.config.EPOCHS}")
+        prev_optimizer_stepped = False
 
         for images, targets, target_lengths, _, _ in pbar:
+            # Gọi scheduler.step() sau optimizer.step() của batch trước (tránh warning PyTorch)
+            if prev_optimizer_stepped:
+                self.scheduler.step()
+            prev_optimizer_stepped = False
+
             images = images.to(self.device)
             targets = targets.to(self.device)
 
@@ -128,20 +134,20 @@ class Trainer:
             torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), self.config.GRAD_CLIP)
 
-            # Save scale before step for scheduler check
-            scale_before = self.scaler.get_scale()
-
             # Step optimizer & update scaler
+            scale_before = self.scaler.get_scale()
             self.scaler.step(self.optimizer)
             self.scaler.update()
-
-            # Step scheduler only if optimizer actually stepped (scale not reduced)
             if self.scaler.get_scale() >= scale_before:
-                self.scheduler.step()
+                prev_optimizer_stepped = True
 
             epoch_loss += loss.item()
             pbar.set_postfix(
                 {'loss': loss.item(), 'lr': self.scheduler.get_last_lr()[0]})
+
+        # Scheduler step cho batch cuối cùng (đã gọi optimizer.step() ở trên)
+        if prev_optimizer_stepped:
+            self.scheduler.step()
 
         return epoch_loss / len(self.train_loader)
 
@@ -254,8 +260,9 @@ class Trainer:
 
     def fit(self) -> None:
         """Run the full training loop for specified number of epochs."""
+        loss_type = "Focal CTC" if self.use_focal_ctc else "CTC"
         print(
-            f"🚀 TRAINING START | Device: {self.device} | Epochs: {self.config.EPOCHS}")
+            f"🚀 TRAINING START | Device: {self.device} | Epochs: {self.config.EPOCHS} | Loss: {loss_type}")
 
         for epoch in range(self.config.EPOCHS):
             self.current_epoch = epoch
