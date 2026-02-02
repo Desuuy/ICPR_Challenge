@@ -169,6 +169,7 @@ def main():
         'val_split_file': config.VAL_SPLIT_FILE,
         'seed': config.SEED,
         'augmentation_level': config.AUGMENTATION_LEVEL,
+        'same_aug_per_sample': getattr(config, 'SAME_AUG_PER_SAMPLE', True),
     }
 
     # Create datasets based on mode
@@ -259,6 +260,7 @@ def main():
         model = MultiFrameSVTRv2(
             num_classes=config.NUM_CLASSES,
             use_stn=config.USE_STN,
+            dropout=getattr(config, 'DROPOUT', 0.0),
         ).to(config.DEVICE)
 
         # Xác nhận architecture
@@ -276,11 +278,13 @@ def main():
         pretrained_loaded = False
         if hasattr(config, 'PRETRAINED_PATH') and config.PRETRAINED_PATH:
             if os.path.exists(config.PRETRAINED_PATH):
-                print(f"\n🔄 Loading Pretrained Weights: {config.PRETRAINED_PATH}")
+                print(
+                    f"\n🔄 Loading Pretrained Weights: {config.PRETRAINED_PATH}")
                 model.load_weights(config.PRETRAINED_PATH)
                 pretrained_loaded = True
             else:
-                print(f"\n⚠️ Pretrained path không tồn tại: {config.PRETRAINED_PATH}")
+                print(
+                    f"\n⚠️ Pretrained path không tồn tại: {config.PRETRAINED_PATH}")
                 print(f"   Model sẽ được train từ đầu (random initialization)")
         else:
             print(f"\nℹ️ Không có PRETRAINED_PATH trong config")
@@ -332,7 +336,7 @@ def main():
             head_params = sum(p.numel() for p in model.head.parameters())
             print(
                 f"   Head params: {head_params:,} ({head_params*4/(1024**2):.2f} MB)")
-        
+
         # Hiển thị trạng thái pretrained
         pretrained_status = "✅ LOADED" if pretrained_loaded else "❌ NOT LOADED (random init)"
         print(f"\n   Pretrained Weights: {pretrained_status}")
