@@ -29,13 +29,22 @@ class Config:
     # Training hyperparameters
     BATCH_SIZE: int = 64
     LEARNING_RATE: float = 0.000325
-    EPOCHS: int = 30
+    EPOCHS: int = 1
     SEED: int = 42
     NUM_WORKERS: int = 10
     WEIGHT_DECAY: float = 0.05
     GRAD_CLIP: float = 5.0
     SPLIT_RATIO: float = 0.9
     USE_CUDNN_BENCHMARK: bool = False
+
+    # Accuracy improvements (see docs/IMPROVEMENT_PROPOSALS.md)
+    # Focus on hard samples (sample-level weighting)
+    USE_FOCAL_CTC: bool = True
+    CTC_BEAM_WIDTH: int = 1      # 1 = greedy decode; 5–10 = beam search
+    SAME_AUG_PER_SAMPLE: bool = True  # Same augmentation for all 5 frames
+    DROPOUT: float = 0.1         # Dropout in STN/Fusion (0 = disabled)
+    # Lưu danh sách sample dự đoán sai (để phân tích)
+    SAVE_WRONG_PREDICTIONS: bool = True
 
     # CRNN model hyperparameters
     HIDDEN_SIZE: int = 256
@@ -46,13 +55,14 @@ class Config:
     TRANSFORMER_LAYERS: int = 3
     TRANSFORMER_FF_DIM: int = 2048
     TRANSFORMER_DROPOUT: float = 0.1
-    
 
     # SVTRv2-Small model hyperparameters
-    SVTR_DIMS: list = field(default_factory=lambda: [128, 256, 384]) # Khớp dims
-    SVTR_DEPTHS: list = field(default_factory=lambda: [6, 6, 6])     # Khớp depths
-    SVTR_HEADS: list = field(default_factory=lambda: [4, 8, 12])    # Khớp num_heads
-    
+    SVTR_DIMS: list = field(default_factory=lambda: [
+                            128, 256, 384])  # Khớp dims
+    SVTR_DEPTHS: list = field(default_factory=lambda: [
+                              6, 6, 6])     # Khớp depths
+    SVTR_HEADS: list = field(default_factory=lambda: [
+                             4, 8, 12])    # Khớp num_heads
 
     """
      # Base variant: dims=[192, 384, 512], depths=[6, 6, 6], num_heads=[6, 12, 16]
