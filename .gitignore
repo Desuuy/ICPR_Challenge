@@ -14,7 +14,7 @@ env/
 !data/val_tracks.json  
 
 # Model Checkpoints
-*.pth
+# *.pth
 *.pt
 *.ckpt
 best_model.pth
