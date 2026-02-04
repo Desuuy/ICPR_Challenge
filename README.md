@@ -1,140 +1,47 @@
 ## MultiFrame-LPR
 
-Multi-frame OCR solution for the **ICPR 2026 Challenge on Low-Resolution License Plate Recognition**.
+MultiFrame-LPR is a multi-frame OCR system for the **ICPR 2026 Challenge on Low-Resolution License Plate Recognition**.  
+It processes short sequences of low-resolution license plate frames and fuses temporal information to produce robust text predictions.
 
-This repository implements a **5-frame license plate recognizer** with:
-- Modern **SVTRv2-based backbone** (`MultiFrameSVTRv2`)
-- Optional **Spatial Transformer Network (STN)**
-- Optional **Super-Resolution (MF‑LPR / LP‑Diff)** pre-processing
+The current pipeline consists of:
+- A 5-frame OCR backbone based on **SVTRv2** (`MultiFrameSVTRv2`)
+- Optional **Spatial Transformer Network (STN)** for alignment
+- Optional **Super-Resolution (MF-LPR / LP-Diff)** as a pre-processing stage
 
-🔗 **Challenge:** `https://icpr26lrlpr.github.io/`
-
----
-
-## Quick Start
-
-### 1. Environment
-
-```bash
-# Activate venv (PowerShell)
-.\.venv\Scripts\Activate.ps1
-
-# Install dependencies (uv)
-uv sync
-```
-
-### 2. Train baseline OCR (không SR, dùng MultiFrameSVTRv2 + STN)
-
-```bash
-python train.py \
-  --model mf_svtrv2 \
-  --experiment-name mfsvtrv2_baseline
-```
-
-> Mặc định `MODEL_TYPE = "mf_svtrv2"` trong `configs/config.py`, nên có thể chỉ cần:
-> ```bash
-> python train.py
-> ```
-
-### 3. Bật Super-Resolution (MF‑LPR / LP‑Diff)
-
-Giả sử bạn đã có checkpoint SR:
-
-```python
-# configs/config.py
-USE_SR: bool = True
-SR_CHECKPOINT_PATH: str = r"weights/sr/mf_lpr_sr_best.pth"
-SR_CONFIG_PATH: str = "sr_model/config/LP-Diff.json"
-```
-
-Chạy:
-
-```bash
-python train.py --batch-size 32
-```
-
-Hoặc override từ CLI:
-
-```bash
-python train.py \
-  --use-sr \
-  --sr-checkpoint-path "weights/sr/mf_lpr_sr_best.pth"
-```
-
-### 4. Tạo submission cho test set
-
-```bash
-python train.py \
-  --submission-mode \
-  --experiment-name mfsvtrv2_submit
-```
-
-Kết quả: `results/submission_mfsvtrv2_submit_final.txt`
+Challenge website: `https://icpr26lrlpr.github.io/`
 
 ---
 
-## Key Features
+## Table of Contents
 
-- **Multi-Frame Fusion (5 frames)**: Input shape `(B, 5, 3, 32, 128)` với attention fusion.
-- **MultiFrameSVTRv2 (mặc định)**:
-  - Backbone SVTRv2-LNConvTwo33
-  - Attention fusion cho 5 frame
-  - CTC head cho sequence decoding.
-- **STN (tùy chọn)**: Căn chỉnh biển số trước khi đưa vào backbone.
-- **Super-Resolution (MF‑LPR / LP‑Diff, tùy chọn)**:
-  - Pretrained diffusion SR model, chạy **trước** OCR.
-  - Tích hợp qua adapter `src/sr/mf_lpr_sr.py`.
-- **Scenario-aware splitting**:
-  - Split train/val ưu tiên track từ Scenario-B, lưu vào `data/val_tracks.json`.
-- **Training utilities**:
-  - Mixed precision (`torch.amp`), gradient clipping, OneCycleLR, focal CTC loss (tùy chọn).
-
----
-
-## Model Architectures
-
-### 1. MultiFrameSVTRv2 (mặc định, tốt nhất)
-
-**Pipeline:**  
-`5× LR Frames → (optional STN) → SVTRv2 Backbone → Attention Fusion → CTC Head`
-
-- Định nghĩa trong `src/mf_svtrv2.py`
-- Sử dụng cấu hình từ `configs/config.py` (`SVTR_DIMS`, `SVTR_DEPTHS`, `SVTR_HEADS`).
-- Pretrained weights (ví dụ UniRec) load từ `Config.PRETRAINED_PATH`.
-
-### 2. ResTranOCR
-
-**Pipeline:**  
-`5× Frames → (optional STN) → ResNet34 → Attention Fusion → Transformer Encoder → CTC`
-
-- Định nghĩa trong `src/models/restran.py`.
-- Chọn bằng `--model restran`.
-
-### 3. MultiFrameCRNN
-
-**Pipeline:**  
-`5× Frames → (optional STN) → CNN → Attention Fusion → BiLSTM → CTC`
-
-- Định nghĩa trong `src/models/crnn.py`.
-- Chọn bằng `--model crnn`.
+- [Installation](#installation)
+- [Data Preparation](#data-preparation)
+- [Model Architectures](#model-architectures)
+- [Training Usage](#training-usage)
+- [Super-Resolution Integration (MF-LPR / LP-Diff)](#super-resolution-integration-mf-lpr--lp-diff)
+- [Outputs](#outputs)
+- [Configuration](#configuration)
+- [Project Structure](#project-structure)
+- [Practical Notes](#practical-notes)
 
 ---
 
 ## Installation
 
-**Yêu cầu:**
-- Python 3.11+
-- GPU hỗ trợ CUDA (khuyến nghị)
+### Requirements
 
-### Bằng uv (khuyến nghị)
+- Python 3.11+
+- CUDA-capable GPU (recommended)
+
+### Using `uv` (recommended)
 
 ```bash
-git clone <repo_url>
+git clone <this-repo-url>
 cd MultiFrame-LPR
 uv sync
 ```
 
-### Bằng pip (nếu không dùng uv)
+### Using `pip`
 
 ```bash
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
@@ -145,7 +52,7 @@ pip install albumentations opencv-python matplotlib numpy pandas tqdm
 
 ## Data Preparation
 
-Cấu trúc thư mục:
+The training data is expected under `data/train` with the following structure (simplified):
 
 ```text
 data/train/
@@ -155,7 +62,7 @@ data/train/
 │       │   ├── lr-0.png
 │       │   ├── lr-1.png
 │       │   ├── ...
-│       │   ├── hr-0.png (tùy chọn, dùng cho synthetic LR)
+│       │   ├── hr-0.png              # optional, for synthetic LR generation
 │       │   └── annotations.json
 │       └── track_00002/
 │           └── ...
@@ -163,20 +70,63 @@ data/train/
     └── ...
 ```
 
-`annotations.json` (tối thiểu):
+The minimal `annotations.json` format is:
 
 ```json
 {"plate_text": "ABC1234"}
 ```
 
-- Train/val split được tạo và lưu vào `data/val_tracks.json` (Scenario-B aware).
-- Test public (nếu có) đặt trong `data/public_test/` cùng cấu trúc track nhưng **không có annotations**.
+Notes:
+- Train/validation splitting is scenario-aware and stored in `data/val_tracks.json`.
+- If a public test set is provided, it should follow the same `track_*` structure under `data/public_test/` but without annotations.
+
+---
+
+## Model Architectures
+
+### 1. MultiFrameSVTRv2 (default and recommended)
+
+Pipeline:
+
+```text
+5 × LR frames → (optional STN) → SVTRv2 backbone → attention-based temporal fusion → CTC head
+```
+
+- Implemented in `src/mf_svtrv2.py`.
+- Controlled via `configs/config.py` (`SVTR_DIMS`, `SVTR_DEPTHS`, `SVTR_HEADS`).
+- Can load pretrained weights via `Config.PRETRAINED_PATH` (e.g., UniRec-based checkpoints).
+
+### 2. ResTranOCR
+
+Pipeline:
+
+```text
+5 × frames → (optional STN) → ResNet34 backbone → attention fusion → Transformer encoder → CTC
+```
+
+- Implemented in `src/models/restran.py`.
+- Select via `--model restran`.
+
+### 3. MultiFrameCRNN
+
+Pipeline:
+
+```text
+5 × frames → (optional STN) → CNN backbone → attention fusion → BiLSTM → CTC
+```
+
+- Implemented in `src/models/crnn.py`.
+- Select via `--model crnn`.
+
+All models operate on input tensors of shape `(batch, 5, 3, 32, 128)` and produce sequences decoded by CTC.
 
 ---
 
 ## Training Usage
 
-### Basic training (MultiFrameSVTRv2 + STN, không SR)
+The main entry point is `train.py`.
+
+### Basic training (MultiFrameSVTRv2 + STN, no SR)
 
 ```bash
 python train.py \
@@ -184,7 +134,13 @@ python train.py \
   --experiment-name mfsvtrv2_baseline
 ```
 
-### Training với cấu hình tuỳ chỉnh
+Since `MODEL_TYPE = "mf_svtrv2"` in `configs/config.py`, the simplest case is:
+
+```bash
+python train.py
+```
+
+### Custom configuration
 
 ```bash
 python train.py \
@@ -197,124 +153,144 @@ python train.py \
   --aug-level full
 ```
 
-### Tắt STN
+### Disable STN
 
 ```bash
 python train.py --no-stn
 ```
 
-### Bật Super-Resolution (nếu đã có checkpoint SR)
+### Generate submission for test set
 
 ```bash
 python train.py \
-  --use-sr \
-  --sr-checkpoint-path "weights/sr/mf_lpr_sr_best.pth"
+  --submission-mode \
+  --experiment-name mfsvtrv2_submit
 ```
 
-### Các tham số CLI quan trọng
+This will create: `results/submission_mfsvtrv2_submit_final.txt`.
 
-- `-m, --model`: `crnn`, `restran`, `mf_svtrv2` (default: `mf_svtrv2`)
-- `-n, --experiment-name`: tên thí nghiệm, dùng để đặt tên file output
-- `--data-root`: thư mục train (default: `data/train`)
-- `--batch-size`: batch size (default: `64`)
-- `--epochs`: số epoch (default: từ `Config.EPOCHS`)
+### Key command-line arguments
+
+- `-m, --model`: model type, one of `crnn`, `restran`, `mf_svtrv2` (default: `mf_svtrv2`)
+- `-n, --experiment-name`: experiment identifier used in output file names
+- `--data-root`: path to training data (default: `data/train`)
+- `--batch-size`: batch size (default: `Config.BATCH_SIZE`)
+- `--epochs`: number of epochs (default: `Config.EPOCHS`)
 - `--lr, --learning-rate`: learning rate (default: `Config.LEARNING_RATE`)
-- `--aug-level`: `full` hoặc `light`
-- `--no-stn`: tắt STN
-- `--submission-mode`: train trên full data và tạo submission cho test
-- `--output-dir`: thư mục lưu kết quả (default: `results/`)
-- `--use-sr`: bật Super-Resolution MF‑LPR
-- `--sr-checkpoint-path`: đường dẫn checkpoint GEN của SR
-- `--sr-config-path`: đường dẫn JSON config SR (default: `sr_model/config/LP-Diff.json`)
+- `--aug-level`: `"full"` or `"light"`
+- `--no-stn`: disable STN
+- `--submission-mode`: train on the full dataset and then run inference on the test set
+- `--output-dir`: directory for outputs (default: `results/`)
+- `--use-sr`: enable MF-LPR Super-Resolution in the data pipeline
+- `--sr-checkpoint-path`: path to the MF-LPR generator checkpoint (`*_gen*.pth`)
+- `--sr-config-path`: path to the SR JSON config (default: `sr_model/config/LP-Diff.json`)
 
 ---
 
-## Super-Resolution Integration (MF‑LPR / LP‑Diff)
+## Super-Resolution Integration (MF-LPR / LP-Diff)
+
+Super-resolution is integrated as an **optional pre-processing step** before the OCR backbone.
 
 ### Adapter: `src/sr/mf_lpr_sr.py`
 
+The adapter wraps the original LP-Diff implementation from `sr_model/` and exposes a simple API:
+
 ```python
 from src.sr import MF_LPR_SR
+import torch
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 sr = MF_LPR_SR(
     checkpoint_path="weights/sr/mf_lpr_sr_best.pth",
     config_path="sr_model/config/LP-Diff.json",
-    device=config.DEVICE,
+    device=device,
 )
 
+# frames: (T, C, H, W) normalized to [-1, 1]
 sr_frames = sr.enhance_sequence(frames, resize_to=(32, 128))
 ```
 
-- Adapter wrap lại code gốc trong `sr_model/` (UNet + GaussianDiffusion + MTA).
-- Chỉ dùng cho **inference**; SR model được pretrained và đóng băng, **không train cùng OCR**.
+Key points:
+- Uses the original UNet + GaussianDiffusion + MTA from `sr_model/`.
+- Intended for **inference only**; SR weights are pretrained and frozen (not updated during OCR training).
 
-### Bật/tắt SR trong pipeline
+### Enabling/disabling SR
 
-Trong `configs/config.py`:
+In `configs/config.py`:
 
 ```python
-USE_SR: bool = True  # hoặc False
+USE_SR: bool = True  # or False
 SR_CHECKPOINT_PATH: str = r"weights/sr/mf_lpr_sr_best.pth"
 SR_CONFIG_PATH: str = "sr_model/config/LP-Diff.json"
 ```
 
-Trong `train.py`, nếu `USE_SR=True` và `SR_CHECKPOINT_PATH` hợp lệ:
-- Khởi tạo `MF_LPR_SR`.
-- Truyền `sr_enhancer` vào `MultiFrameDataset`.
-- Mỗi sample (5 frame) được SR trước khi vào model OCR.
+In `train.py`, when `USE_SR=True` and `SR_CHECKPOINT_PATH` is valid:
+- An `MF_LPR_SR` instance is created.
+- This instance is passed into `MultiFrameDataset` as `sr_enhancer`.
+- Each 5-frame sample is optionally super-resolved before feeding into the OCR model.
 
-⚠️ **Lưu ý runtime:**  
-Diffusion SR rất nặng (1000 bước / lần). Để train thực tế:
-- Nên giảm `n_timestep` trong config SR (ví dụ 50–100).
-- Hoặc chỉ SR frame giữa.
-- Hoặc precompute ảnh SR offline rồi train OCR trên ảnh SR đã lưu.
+### Runtime considerations
+
+LP-Diff is a diffusion-based SR model with `n_timestep = 1000` by default.  
+This is computationally expensive:
+- Each SR call runs a 1000-step sampling loop over the batch.
+- In the naive setup, this can make training prohibitively slow.
+
+For practical use:
+- Consider reducing `n_timestep` in the SR config (e.g., 50–100 for inference).
+- Consider applying SR only to the central frame of the sequence rather than all 5 frames.
+- For large-scale training, precomputing SR images offline and training OCR on those images is often the most efficient approach.
 
 ---
 
 ## Outputs
 
-Tất cả file output đều được lưu trong `OUTPUT_DIR` (default: `results/`).
+All outputs are written under `OUTPUT_DIR` (default: `results/`).
 
 ### Checkpoints
 
-- **`{EXPERIMENT_NAME}_best.pth`**
-  - Model tốt nhất theo **Val Accuracy** (luôn có).
-- **`{EXPERIMENT_NAME}_final.pth`**
-  - Trọng số model **epoch cuối** (chỉ khi có validation; không có trong `--submission-mode`).
+- `{EXPERIMENT_NAME}_best.pth`
+  - Best model checkpoint according to validation accuracy (always saved).
+- `{EXPERIMENT_NAME}_final.pth`
+  - Final model weights at the end of training (only when validation is used; not in `--submission-mode`).
 
 ### Submission files
 
-- **`submission_{EXPERIMENT_NAME}.txt`**
-  - Dự đoán trên **validation set** mỗi khi có best mới.
-  - Format: `track_id,pred_text;confidence`.
-- **`submission_{EXPERIMENT_NAME}_final.txt`**
-  - Chỉ khi `--submission-mode` và có test data.
-  - Dự đoán cho **test set** để nộp bài.
+- `submission_{EXPERIMENT_NAME}.txt`
+  - Predictions on the validation set whenever a new best model is found.
+  - Format: `track_id,predicted_text;confidence`.
+- `submission_{EXPERIMENT_NAME}_final.txt`
+  - Only in `--submission-mode` when test data is available.
+  - Predictions for the test set in the competition format.
 
 ### Wrong predictions
 
-- **`wrong_predictions_{EXPERIMENT_NAME}.txt`**
-  - Sinh ra khi:
-    - Có validation
-    - `SAVE_WRONG_PREDICTIONS=True` (default)
-    - Có ít nhất 1 sample sai
-  - Format:
+- `wrong_predictions_{EXPERIMENT_NAME}.txt`
+  - Generated when:
+    - Validation is enabled.
+    - `SAVE_WRONG_PREDICTIONS = True` (default).
+    - At least one misclassified sample exists.
+  - Format (tab-separated):
+
     ```text
     track_id    ground_truth    prediction    confidence    img_paths
     track_00042 ABC1234         ABC1235      0.8234        data/.../track_00042/lr-0.png;...;lr-4.png
     ```
-  - `img_paths` giúp bạn mở nhanh đúng 5 ảnh của sample bị sai.
+
+  - The `img_paths` field contains the list of 5 LR frame paths for that sample, which is convenient for manual inspection.
 
 ---
 
-## Configuration (tóm tắt)
+## Configuration
 
-Các hyperparameter chính trong `configs/config.py`:
+The main configuration is defined in `configs/config.py` as a dataclass `Config`.  
+Important fields include:
 
 ```python
-MODEL_TYPE: str = "mf_svtrv2"   # "crnn", "restran", "mf_svtrv2"
+MODEL_TYPE: str = "mf_svtrv2"        # "crnn", "restran", or "mf_svtrv2"
 EXPERIMENT_NAME: str = MODEL_TYPE
-AUGMENTATION_LEVEL: str = "full"   # "full" hoặc "light"
+AUGMENTATION_LEVEL: str = "full"     # "full" or "light"
 USE_STN: bool = True
 
 DATA_ROOT: str = "data/train"
@@ -322,19 +298,20 @@ TEST_DATA_ROOT: str = "data/public_test"
 
 BATCH_SIZE: int = 64
 LEARNING_RATE: float = 3.25e-4
-EPOCHS: int = 1      # chỉnh trong config hoặc override bằng CLI
+EPOCHS: int = 1
 
 USE_FOCAL_CTC: bool = True
 CTC_BEAM_WIDTH: int = 1
 
-PRETRAINED_PATH: str = r"weights/best.pth"   # cho mf_svtrv2 / restran / crnn
+PRETRAINED_PATH: str = r"weights/best.pth"   # OCR pretrained weights (if available)
 
-USE_SR: bool = False                         # bật/tắt SR
-SR_CHECKPOINT_PATH: str = ""                 # cần set nếu USE_SR=True
+USE_SR: bool = False                         # enable/disable SR
+SR_CHECKPOINT_PATH: str = ""                 # must be set if USE_SR=True
 SR_CONFIG_PATH: str = "sr_model/config/LP-Diff.json"
 ```
 
-Tất cả các field có thể override qua CLI (`arg_to_config` trong `train.py`).
+Most of these fields can be overridden via CLI arguments in `train.py`  
+(see `arg_to_config` mapping).
 
 ---
 
@@ -343,7 +320,7 @@ Tất cả các field có thể override qua CLI (`arg_to_config` trong `train.p
 ```text
 .
 ├── configs/
-│   └── config.py                 # Dataclass cấu hình
+│   └── config.py                 # Configuration dataclass
 ├── src/
 │   ├── data/
 │   │   ├── dataset.py            # MultiFrameDataset (5 frames, scenario-aware split, optional SR)
@@ -353,34 +330,37 @@ Tất cả các field có thể override qua CLI (`arg_to_config` trong `train.p
 │   │   ├── restran.py            # ResTranOCR
 │   │   └── components.py         # STN, AttentionFusion, etc.
 │   ├── sr/
-│   │   ├── mf_lpr_sr.py          # MF-LPR / LP-Diff adapter (SR)
+│   │   ├── mf_lpr_sr.py          # MF-LPR / LP-Diff SR adapter
 │   │   └── __init__.py
 │   ├── training/
-│   │   └── trainer.py            # Training, validation, saving outputs
+│   │   └── trainer.py            # Training loop, validation, saving outputs
 │   └── utils/
-│       ├── common.py             # seed, CUDA utils, memory estimate
-│       └── postprocess.py        # CTC decoding, CER
+│       ├── common.py             # Seeding, CUDA utilities, memory estimation
+│       └── postprocess.py        # CTC decoding, CER computation
 ├── sr_model/                     # Original LP-Diff SR implementation
-│   ├── config/LP-Diff.json       # SR config
+│   ├── config/LP-Diff.json       # SR configuration
 │   ├── model/                    # UNet + GaussianDiffusion + MTA
 │   └── ...
 ├── train.py                      # Main training / submission script
-├── run_ablation.py               # Ablation study (không bắt buộc)
+├── run_ablation.py               # Ablation study automation (optional)
 ├── docs/
-│   ├── add_sr.md                 # Hướng dẫn tích hợp SR (chi tiết)
-│   ├── CHECKPOINT_PATHS.md       # Hướng dẫn đặt checkpoint
-│   ├── HOW_TO_VERIFY_SR.md       # Cách kiểm tra SR đã tích hợp
-│   └── OUTPUTS_AFTER_RUN.md      # Giải thích file output
+│   ├── add_sr.md                 # Detailed SR integration guide
+│   ├── CHECKPOINT_PATHS.md       # Checkpoint placement and configuration
+│   ├── HOW_TO_VERIFY_SR.md       # How to verify SR integration
+│   └── OUTPUTS_AFTER_RUN.md      # Explanation of output files
 └── pyproject.toml                # Dependencies
 ```
 
 ---
 
-## Notes & Recommendations
+## Practical Notes
 
-- **Khi debug / thử nghiệm nhanh**, nên:
-  - Đặt `USE_SR=False` để training nhanh.
-  - Dùng subset data + `EPOCHS=1` để kiểm tra pipeline.
-- **Khi bật SR để train nghiệm chỉnh**, hãy:
-  - Đảm bảo checkpoint SR chạy ổn với `test_sr_integration.py`.
-  - Cân nhắc giảm `n_timestep` hoặc chỉ SR frame trung tâm để tiết kiệm thời gian.
+- For quick debugging or hyperparameter tuning:
+  - Set `USE_SR = False` to avoid SR overhead.
+  - Use a small subset of the data and `EPOCHS = 1`.
+
+- When enabling SR for serious experiments:
+  - Verify the SR checkpoint with `test_sr_integration.py`.
+  - Consider reducing diffusion steps or SR coverage (e.g., only the central frame) to keep runtime manageable.
+
+Contributions, issues, and pull requests are welcome. Please open a GitHub issue if you encounter problems with the integration or documentation.
