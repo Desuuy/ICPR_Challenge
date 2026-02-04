@@ -17,6 +17,8 @@ if current_dir not in sys.path:
 from src.models.components import STNBlock, AttentionFusion
 from .openrec.modeling.encoders.svtrv2_lnconv_two33 import SVTRv2LNConvTwo33
 from .openrec.modeling.decoders.rctc_decoder import RCTCDecoder
+
+
 class MultiFrameSVTRv2(nn.Module):
     def __init__(self, num_classes, use_stn=True, dropout=0.0):
         super().__init__()

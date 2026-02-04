@@ -78,6 +78,14 @@ class Config:
     # Pretrained path
     PRETRAINED_PATH: str = r"weights/best.pth"
 
+    # Super-resolution (MF-LPR / LP-Diff) options
+    USE_SR: bool = True  # Bật/tắt SR trong pipeline dữ liệu
+    # Đường dẫn checkpoint GEN của LP-Diff, ví dụ:
+    # "sr_model/experiments/LP-Diff_xxx/checkpoint/I10000_E233_gen_best_psnr.pth"
+    SR_CHECKPOINT_PATH: str = "C:/Users/anhhu/MultiFrame-LPR/weights/I80000_E41_gen_best_psnr.pth"
+    # Đường dẫn file config JSON của LP-Diff
+    SR_CONFIG_PATH: str = "sr_model/config/LP-Diff.json"
+
     DEVICE: torch.device = field(default_factory=lambda: torch.device(
         'cuda' if torch.cuda.is_available() else 'cpu'))
     OUTPUT_DIR: str = "results"

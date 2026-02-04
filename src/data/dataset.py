@@ -40,6 +40,7 @@ class MultiFrameDataset(Dataset):
         is_test: bool = False,
         full_train: bool = False,
         same_aug_per_sample: bool = True,
+        sr_enhancer: Any = None,
     ):
         """
         Args:
@@ -67,6 +68,8 @@ class MultiFrameDataset(Dataset):
         self.is_test = is_test
         self.full_train = full_train
         self.same_aug_per_sample = same_aug_per_sample
+        # Optional super-resolution enhancer (MF_LPR_SR hoặc tương tự)
+        self.sr_enhancer = sr_enhancer
 
         if mode == 'train':
             # Training: apply augmentation on the fly
@@ -237,7 +240,7 @@ class MultiFrameDataset(Dataset):
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, int, str, str]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, int, str, str, List[str]]:
         """Load exactly 5 frames (guaranteed by dataset structure).
 
         For training: applies degradation (if synthetic) then augmentation.
@@ -272,6 +275,14 @@ class MultiFrameDataset(Dataset):
 
         images_tensor = torch.stack(images_list, dim=0)
 
+        # Optional: apply super-resolution enhancement per-sample
+        if self.sr_enhancer is not None:
+            # frames: (T, C, H, W) -> (T, C, H, W) sau SR
+            images_tensor = self.sr_enhancer.enhance_sequence(
+                images_tensor,
+                resize_to=(self.img_height, self.img_width),
+            )
+
         # Handle test mode (no labels)
         if self.is_test:
             target = [0]  # Dummy target
@@ -282,13 +293,20 @@ class MultiFrameDataset(Dataset):
                 target = [0]
             target_len = len(target)
 
-        return images_tensor, torch.tensor(target, dtype=torch.long), target_len, label, track_id
+        return images_tensor, torch.tensor(target, dtype=torch.long), target_len, label, track_id, img_paths
 
     @staticmethod
-    def collate_fn(batch: List[Tuple]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Tuple[str, ...], Tuple[str, ...]]:
+    def collate_fn(batch: List[Tuple]) -> Tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        Tuple[str, ...],
+        Tuple[str, ...],
+        Tuple[List[str], ...],
+    ]:
         """Custom collate function for DataLoader."""
-        images, targets, target_lengths, labels_text, track_ids = zip(*batch)
+        images, targets, target_lengths, labels_text, track_ids, img_paths = zip(*batch)
         images = torch.stack(images, 0)
         targets = torch.cat(targets)
         target_lengths = torch.tensor(target_lengths, dtype=torch.long)
-        return images, targets, target_lengths, labels_text, track_ids
+        return images, targets, target_lengths, labels_text, track_ids, img_paths

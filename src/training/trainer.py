@@ -85,7 +85,7 @@ class Trainer:
                     desc=f"Ep {self.current_epoch + 1}/{self.config.EPOCHS}")
         prev_optimizer_stepped = False
 
-        for images, targets, target_lengths, _, _ in pbar:
+        for images, targets, target_lengths, _, _, _ in pbar:
             # Gọi scheduler.step() sau optimizer.step() của batch trước (tránh warning PyTorch)
             if prev_optimizer_stepped:
                 self.scheduler.step()
@@ -151,12 +151,12 @@ class Trainer:
 
         return epoch_loss / len(self.train_loader)
 
-    def validate(self) -> Tuple[Dict[str, float], List[str], List[Tuple[str, str, str, float]]]:
+    def validate(self) -> Tuple[Dict[str, float], List[str], List[Tuple[str, str, str, float, str]]]:
         """Run validation and generate submission data.
 
         Returns:
             Tuple of (metrics_dict, submission_data, wrong_predictions).
-            wrong_predictions: list of (track_id, ground_truth, prediction, confidence).
+            wrong_predictions: list of (track_id, ground_truth, prediction, confidence, img_paths_str).
         """
         if self.val_loader is None:
             return {'loss': 0.0, 'acc': 0.0, 'cer': 0.0}, [], []
@@ -168,10 +168,10 @@ class Trainer:
         all_preds: List[str] = []
         all_targets: List[str] = []
         submission_data: List[str] = []
-        wrong_predictions: List[Tuple[str, str, str, float]] = []
+        wrong_predictions: List[Tuple[str, str, str, float, str]] = []
 
         with torch.no_grad():
-            for images, targets, target_lengths, labels_text, track_ids in self.val_loader:
+            for images, targets, target_lengths, labels_text, track_ids, img_paths_batch in self.val_loader:
                 images = images.to(self.device)
                 targets = targets.to(self.device)
                 preds = self.model(images)
@@ -196,6 +196,7 @@ class Trainer:
                 for i, (pred_text, conf) in enumerate(decoded_list):
                     gt_text = labels_text[i]
                     track_id = track_ids[i]
+                    img_paths_str = ";".join(list(img_paths_batch[i]))
 
                     all_preds.append(pred_text)
                     all_targets.append(gt_text)
@@ -204,7 +205,7 @@ class Trainer:
                         total_correct += 1
                     else:
                         wrong_predictions.append(
-                            (track_id, gt_text, pred_text, conf))
+                            (track_id, gt_text, pred_text, conf, img_paths_str))
 
                     submission_data.append(
                         f"{track_id},{pred_text};{conf:.4f}")
@@ -234,20 +235,21 @@ class Trainer:
 
     def save_wrong_predictions(
         self,
-        wrong_predictions: List[Tuple[str, str, str, float]],
+        wrong_predictions: List[Tuple[str, str, str, float, str]],
     ) -> None:
-        """Lưu danh sách sample dự đoán sai (track_id, gt, pred, conf) để phân tích."""
+        """Lưu danh sách sample dự đoán sai (track_id, gt, pred, conf, img_paths) để phân tích."""
         if not wrong_predictions:
             return
         exp_name = self._get_exp_name()
         filename = self._get_output_path(f"wrong_predictions_{exp_name}.txt")
         with open(filename, 'w', encoding='utf-8') as f:
-            f.write("track_id\tground_truth\tprediction\tconfidence\n")
-            for track_id, gt, pred, conf in wrong_predictions:
+            f.write("track_id\tground_truth\tprediction\tconfidence\timg_paths\n")
+            for track_id, gt, pred, conf, img_paths_str in wrong_predictions:
                 # Escape tab/newline trong nội dung
                 gt_s = gt.replace('\t', ' ').replace('\n', ' ')
                 pred_s = pred.replace('\t', ' ').replace('\n', ' ')
-                f.write(f"{track_id}\t{gt_s}\t{pred_s}\t{conf:.4f}\n")
+                img_paths_s = img_paths_str.replace('\t', ' ').replace('\n', ' ')
+                f.write(f"{track_id}\t{gt_s}\t{pred_s}\t{conf:.4f}\t{img_paths_s}\n")
         print(
             f"📋 Saved {len(wrong_predictions)} wrong predictions to {filename}")
 
@@ -323,7 +325,7 @@ class Trainer:
         results: List[Tuple[str, str, float]] = []
 
         with torch.no_grad():
-            for images, _, _, _, track_ids in loader:
+            for images, _, _, _, track_ids, _ in loader:
                 images = images.to(self.device)
                 preds = self.model(images)
 
@@ -348,7 +350,7 @@ class Trainer:
         results = []
         self.model.eval()
         with torch.no_grad():
-            for images, _, _, _, track_ids in tqdm(test_loader, desc="Test Inference"):
+            for images, _, _, _, track_ids, _ in tqdm(test_loader, desc="Test Inference"):
                 images = images.to(self.device)
                 preds = self.model(images)
                 beam_width = getattr(self.config, 'CTC_BEAM_WIDTH', 1)
