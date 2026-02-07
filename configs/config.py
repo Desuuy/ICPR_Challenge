@@ -1,6 +1,6 @@
 """Configuration dataclass for the training pipeline."""
 from dataclasses import dataclass, field
-from typing import Dict
+from typing import Dict, Optional
 import os
 import torch
 
@@ -19,9 +19,12 @@ class Config:
     USE_STN: bool = True  # Enable Spatial Transformer Network
 
     # Data paths (tương đối project root, không phụ thuộc cwd)
-    DATA_ROOT: str = field(default_factory=lambda: os.path.join(_PROJECT_ROOT, "Data", "train"))
-    TEST_DATA_ROOT: str = field(default_factory=lambda: os.path.join(_PROJECT_ROOT, "Data", "Pa7a3Hin-test-public"))
-    VAL_SPLIT_FILE: str = field(default_factory=lambda: os.path.join(_PROJECT_ROOT, "Data", "val_tracks.json"))
+    DATA_ROOT: str = field(default_factory=lambda: os.path.join(
+        _PROJECT_ROOT, "Data", "train"))
+    TEST_DATA_ROOT: str = field(default_factory=lambda: os.path.join(
+        _PROJECT_ROOT, "Data", "Pa7a3Hin-test-public"))
+    VAL_SPLIT_FILE: str = field(default_factory=lambda: os.path.join(
+        _PROJECT_ROOT, "Data", "val_tracks.json"))
     SUBMISSION_FILE: str = "submission.txt"
 
     IMG_HEIGHT: int = 32
@@ -53,11 +56,16 @@ class Config:
     SAVE_WRONG_IMAGES: bool = True
     # Super-Resolution (MF-LPR SR) - requires sr_model/ (LP-Diff or similar)
     USE_SR: bool = True
-    SR_CHECKPOINT_PATH: str = field(default_factory=lambda: os.path.join(_PROJECT_ROOT, "weights", "gen_best_psnr.pth"))
-    SR_CONFIG_PATH: str = field(default_factory=lambda: os.path.join(_PROJECT_ROOT, "sr_model", "config", "LP-Diff.json"))
+    SR_CHECKPOINT_PATH: str = field(default_factory=lambda: os.path.join(
+        _PROJECT_ROOT, "weights", "gen_best_psnr.pth"))
+    SR_CONFIG_PATH: str = field(default_factory=lambda: os.path.join(
+        _PROJECT_ROOT, "sr_model", "config", "LP-Diff.json"))
+    # Override n_timestep cho SR inference (None = dùng từ LP-Diff.json; 10/100/1000 = nhanh/chất lượng)
+    SR_N_TIMESTEP: Optional[int] = None
 
     # Pretrained path
-    PRETRAINED_PATH: str = field(default_factory=lambda: os.path.join(_PROJECT_ROOT, "weights", "best.pth"))
+    PRETRAINED_PATH: str = field(default_factory=lambda: os.path.join(
+        _PROJECT_ROOT, "weights", "best.pth"))
 
     # CRNN model hyperparameters
     HIDDEN_SIZE: int = 256
@@ -76,7 +84,6 @@ class Config:
                               6, 6, 6])     # Khớp depths
     SVTR_HEADS: list = field(default_factory=lambda: [
                              4, 8, 12])    # Khớp num_heads
-
 
     DEVICE: torch.device = field(default_factory=lambda: torch.device(
         'cuda' if torch.cuda.is_available() else 'cpu'))
