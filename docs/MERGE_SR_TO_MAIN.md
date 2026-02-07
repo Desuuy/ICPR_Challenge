@@ -28,7 +28,11 @@ git checkout main
 git merge feat/Restoration_Module -m "Merge SR (LP-Diff) integration into main"
 ```
 
-Nếu có conflict: mở file conflict, sửa xong chạy `git add <file>` rồi `git commit`.
+**Nếu có conflict:** đã sửa xong. Chạy tiếp:
+```bash
+git add src/data/dataset.py src/training/trainer.py train.py
+git commit -m "Merge SR (LP-Diff) integration into main"
+```
 
 ---
 
