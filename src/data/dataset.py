@@ -302,7 +302,7 @@ class MultiFrameDataset(Dataset):
         torch.Tensor,
         Tuple[str, ...],
         Tuple[str, ...],
-        Tuple[List[str], ...],
+        Tuple[tuple, ...],
     ]:
         """Custom collate function for DataLoader."""
         images, targets, target_lengths, labels_text, track_ids, img_paths = zip(*batch)
