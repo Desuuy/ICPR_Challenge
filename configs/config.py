@@ -16,7 +16,7 @@ class Config:
 
     # Data paths
     DATA_ROOT: str = "data/train"
-    TEST_DATA_ROOT: str = "data/public_test"
+    TEST_DATA_ROOT: str = "data/test"
     VAL_SPLIT_FILE: str = "data/val_tracks.json"
     SUBMISSION_FILE: str = "submission.txt"
 
@@ -48,9 +48,12 @@ class Config:
     # Copy wrong-prediction images to results/wrong_images_*/ for inspection
     SAVE_WRONG_IMAGES: bool = True
     # Super-Resolution (MF-LPR SR) - requires sr_model/ (LP-Diff or similar)
-    USE_SR: bool = False
-    SR_CHECKPOINT_PATH: str = "weights/I80000_E41_gen_best_psnr.pth"  # GEN model, not opt
+    USE_SR: bool = True
+    SR_CHECKPOINT_PATH: str = "weights/gen_best_psnr.pth" 
     SR_CONFIG_PATH: str = "sr_model/config/LP-Diff.json"
+
+    # Pretrained path
+    PRETRAINED_PATH: str = r"weights/best.pth"
 
     # CRNN model hyperparameters
     HIDDEN_SIZE: int = 256
@@ -70,27 +73,6 @@ class Config:
     SVTR_HEADS: list = field(default_factory=lambda: [
                              4, 8, 12])    # Khớp num_heads
 
-    """
-     # Base variant: dims=[192, 384, 512], depths=[6, 6, 6], num_heads=[6, 12, 16]
-    # (~40-50M params thay vì ~20M của Small)
-    SVTR_DIMS: list = field(default_factory=lambda: [
-                            192, 384, 512])  # Base dims
-    SVTR_DEPTHS: list = field(default_factory=lambda: [
-                              6, 6, 6])      # Base depths
-    SVTR_HEADS: list = field(default_factory=lambda: [
-                             6, 12, 16])     # Base num_heads
-
-    """
-    # Pretrained path
-    PRETRAINED_PATH: str = r"weights/best.pth"
-
-    # Super-resolution (MF-LPR / LP-Diff) options
-    USE_SR: bool = True  # Bật/tắt SR trong pipeline dữ liệu
-    # Đường dẫn checkpoint GEN của LP-Diff, ví dụ:
-    # "sr_model/experiments/LP-Diff_xxx/checkpoint/I10000_E233_gen_best_psnr.pth"
-    SR_CHECKPOINT_PATH: str = "C:/Users/anhhu/MultiFrame-LPR/weights/I80000_E41_gen_best_psnr.pth"
-    # Đường dẫn file config JSON của LP-Diff
-    SR_CONFIG_PATH: str = "sr_model/config/LP-Diff.json"
 
     DEVICE: torch.device = field(default_factory=lambda: torch.device(
         'cuda' if torch.cuda.is_available() else 'cpu'))
