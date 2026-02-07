@@ -96,6 +96,12 @@ def parse_args() -> argparse.Namespace:
         help="Train on full dataset and generate submission file for test data",
     )
     parser.add_argument(
+        "--test-data-root",
+        type=str,
+        default=None,
+        help="Root directory for test data (default: config.TEST_DATA_ROOT = data/public_test)",
+    )
+    parser.add_argument(
         "--use-sr",
         action="store_true",
         help="Enable MF-LPR super-resolution on input frames (MF_LPR_SR)",
@@ -104,7 +110,7 @@ def parse_args() -> argparse.Namespace:
         "--sr-checkpoint-path",
         type=str,
         default=None,
-        help="Checkpoint GEN path for MF-LPR SR model (e.g. Ixxxx_Exxx_gen_best_psnr.pth)",
+        help="Checkpoint GEN path for MF-LPR SR model (e.g. I80000_E41_gen_best_psnr.pth)",
     )
     parser.add_argument(
         "--sr-config-path",
@@ -130,6 +136,7 @@ def main():
         'batch_size': 'BATCH_SIZE',
         'learning_rate': 'LEARNING_RATE',
         'data_root': 'DATA_ROOT',
+        'test_data_root': 'TEST_DATA_ROOT',
         'seed': 'SEED',
         'num_workers': 'NUM_WORKERS',
         'hidden_size': 'HIDDEN_SIZE',
@@ -155,6 +162,15 @@ def main():
     if args.no_stn:
         config.USE_STN = False
 
+    if args.use_sr:
+        sr_model_path = os.path.join(os.path.dirname(__file__), "sr_model")
+        if not os.path.isdir(sr_model_path):
+            print("❌ ERROR: --use-sr requires sr_model/ folder (MF-LPR SR).")
+            print("   SR integration is on branch feat/Restoration_Module.")
+            print("   Use: git checkout feat/Restoration_Module")
+            sys.exit(1)
+        config.USE_SR = True
+
     # Output directory
     config.OUTPUT_DIR = args.output_dir
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
@@ -179,6 +195,8 @@ def main():
     print(
         f"   USE_FOCAL_CTC: {use_focal}  ->  LOSS: {'Focal CTC' if use_focal else 'CTC'}")
     print(f"   SUBMISSION_MODE: {args.submission_mode}")
+    if args.submission_mode:
+        print(f"   TEST_DATA_ROOT: {config.TEST_DATA_ROOT}")
 
     # Validate data path
     if not os.path.exists(config.DATA_ROOT):

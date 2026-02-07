@@ -237,7 +237,7 @@ class Trainer:
         self,
         wrong_predictions: List[Tuple[str, str, str, float, str]],
     ) -> None:
-        """Lưu danh sách sample dự đoán sai (track_id, gt, pred, conf, img_paths) để phân tích."""
+        """Save wrong predictions list (track_id, gt, pred, conf, img_paths) for analysis."""
         if not wrong_predictions:
             return
         exp_name = self._get_exp_name()
@@ -245,13 +245,36 @@ class Trainer:
         with open(filename, 'w', encoding='utf-8') as f:
             f.write("track_id\tground_truth\tprediction\tconfidence\timg_paths\n")
             for track_id, gt, pred, conf, img_paths_str in wrong_predictions:
-                # Escape tab/newline trong nội dung
                 gt_s = gt.replace('\t', ' ').replace('\n', ' ')
                 pred_s = pred.replace('\t', ' ').replace('\n', ' ')
-                img_paths_s = img_paths_str.replace('\t', ' ').replace('\n', ' ')
-                f.write(f"{track_id}\t{gt_s}\t{pred_s}\t{conf:.4f}\t{img_paths_s}\n")
-        print(
-            f"📋 Saved {len(wrong_predictions)} wrong predictions to {filename}")
+                img_s = img_paths_str.replace('\t', ' ').replace('\n', ' ')
+                f.write(f"{track_id}\t{gt_s}\t{pred_s}\t{conf:.4f}\t{img_s}\n")
+        print(f"📋 Saved {len(wrong_predictions)} wrong predictions to {filename}")
+
+    def save_wrong_images(
+        self,
+        wrong_predictions: List[Tuple[str, str, str, float, str]],
+    ) -> None:
+        """Copy wrong-prediction images to results/wrong_images/{exp}/{track_id}/ for inspection."""
+        if not wrong_predictions:
+            return
+        import shutil
+        exp_name = self._get_exp_name()
+        out_dir = self._get_output_path(f"wrong_images_{exp_name}")
+        os.makedirs(out_dir, exist_ok=True)
+        copied = 0
+        for track_id, gt, pred, conf, img_paths_str in wrong_predictions:
+            paths = img_paths_str.split(";")
+            track_dir = os.path.join(out_dir, f"{track_id}_gt{gt}_pred{pred}")
+            os.makedirs(track_dir, exist_ok=True)
+            for i, src in enumerate(paths):
+                if os.path.exists(src):
+                    ext = os.path.splitext(src)[1]
+                    dst = os.path.join(track_dir, f"frame_{i}{ext}")
+                    shutil.copy2(src, dst)
+                    copied += 1
+        if copied > 0:
+            print(f"📁 Copied {copied} wrong images to {out_dir}")
 
     def save_model(self, path: str = None) -> None:
         """Save model checkpoint with experiment name."""
@@ -287,7 +310,7 @@ class Trainer:
                   f"Val CER: {val_cer:.4f} | "
                   f"LR: {current_lr:.2e}")
 
-            # Save best model (theo val accuracy)
+            # Save best model (by val accuracy)
             if val_acc > self.best_acc:
                 self.best_acc = val_acc
                 self.save_model()
@@ -295,10 +318,13 @@ class Trainer:
                 model_path = self._get_output_path(f"{exp_name}_best.pth")
                 print(f"  ⭐ Saved Best Model: {model_path} ({val_acc:.2f}%)")
 
-                if submission_data:
-                    self.save_submission(submission_data)
-                if getattr(self.config, 'SAVE_WRONG_PREDICTIONS', True) and wrong_predictions:
-                    self.save_wrong_predictions(wrong_predictions)
+            # Always save submission and wrong_predictions every epoch (for analysis, even when val_acc=0%)
+            if submission_data:
+                self.save_submission(submission_data)
+            if getattr(self.config, 'SAVE_WRONG_PREDICTIONS', True) and wrong_predictions:
+                self.save_wrong_predictions(wrong_predictions)
+                if getattr(self.config, 'SAVE_WRONG_IMAGES', True):
+                    self.save_wrong_images(wrong_predictions)
 
         # Luôn lưu .pth khi chạy xong (cả SUBMISSION_MODE True/False)
         exp_name = self._get_exp_name()
