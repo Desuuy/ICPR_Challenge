@@ -46,6 +46,7 @@ class MF_LPR_SR:
         checkpoint_path: str,
         config_path: str = "sr_model/config/LP-Diff.json",
         device: Optional[torch.device] = None,
+        n_timestep_override: Optional[int] = None,
     ) -> None:
         """
         Args:
@@ -54,6 +55,8 @@ class MF_LPR_SR:
             config_path: Đường dẫn tới file JSON cấu hình LP-Diff
                 (mặc định dùng `sr_model/config/LP-Diff.json` trong repo).
             device: Thiết bị để chạy mô hình (torch.device).
+            n_timestep_override: Override số bước diffusion (10/100/1000).
+                None = giữ theo LP-Diff.json. Không khớp checkpoint sẽ tính lại schedule.
         """
         if device is None:
             device = torch.device(
@@ -110,6 +113,9 @@ class MF_LPR_SR:
             if schedule_opt is None:
                 raise ValueError(
                     "Cấu hình LP-Diff thiếu 'beta_schedule' cho 'train'/'val'.")
+            # Override n_timestep nếu được chỉ định (10/100/1000)
+            if n_timestep_override is not None:
+                schedule_opt = {**schedule_opt, "n_timestep": n_timestep_override}
             # GaussianDiffusion.set_new_noise_schedule
             netG.set_new_noise_schedule(schedule_opt, device=self.device)
 
