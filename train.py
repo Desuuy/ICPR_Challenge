@@ -118,6 +118,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Config JSON path for MF-LPR SR model (default: sr_model/config/LP-Diff.json)",
     )
+    parser.add_argument(
+        "--sr-n-timestep",
+        type=int,
+        default=None,
+        help="Override n_timestep cho SR inference (10=nhanh, 100=mặc định, 1000=chất lượng cao; None=theo LP-Diff.json)",
+    )
     return parser.parse_args()
 
 
@@ -148,6 +154,7 @@ def main():
         'use_sr': 'USE_SR',
         'sr_checkpoint_path': 'SR_CHECKPOINT_PATH',
         'sr_config_path': 'SR_CONFIG_PATH',
+        'sr_n_timestep': 'SR_N_TIMESTEP',
     }
 
     for arg_name, config_name in arg_to_config.items():
@@ -235,12 +242,16 @@ def main():
                     config_path=getattr(
                         config, "SR_CONFIG_PATH", "sr_model/config/LP-Diff.json"),
                     device=config.DEVICE,
+                    n_timestep_override=getattr(config, "SR_N_TIMESTEP", None),
                 )
                 print("✅ MF-LPR Super-Resolution đã được khởi tạo thành công!")
                 print(f"   - Device: {config.DEVICE}")
                 print(f"   - Checkpoint: {config.SR_CHECKPOINT_PATH}")
                 print(
                     f"   - Config: {getattr(config, 'SR_CONFIG_PATH', 'sr_model/config/LP-Diff.json')}")
+                sr_nt = getattr(config, 'SR_N_TIMESTEP', None)
+                print(
+                    f"   - n_timestep: {sr_nt if sr_nt is not None else 'theo LP-Diff.json'}")
                 print(
                     "   - Status: SR sẽ được áp dụng cho TẤT CẢ frames trong dataset (train/val/test)")
                 print("="*60 + "\n")
