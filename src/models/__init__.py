@@ -9,6 +9,8 @@ from src.models.components import (
     PositionalEncoding,
 )
 
+# MultiFrameSVTRv2 lives in src.mf_svtrv2 - import directly: from src.mf_svtrv2 import MultiFrameSVTRv2
+
 __all__ = [
     "MultiFrameCRNN",
     "ResTranOCR",
@@ -17,7 +19,3 @@ __all__ = [
     "ResNetFeatureExtractor",
     "PositionalEncoding",
 ]
-
-# NOTE: MultiFrameSVTRv2 không được import ở đây để tránh circular import.
-# Nó nằm ở src.mf_svtrv2 và được import trực tiếp trong train.py:
-#   from src.mf_svtrv2 import MultiFrameSVTRv2

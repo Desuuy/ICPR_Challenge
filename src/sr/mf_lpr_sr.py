@@ -128,7 +128,25 @@ class MF_LPR_SR:
         if isinstance(state, dict) and "state_dict" in state:
             state = state["state_dict"]
 
-        missing, unexpected = netG.load_state_dict(state, strict=False)
+        # Bỏ qua các key diffusion schedule nếu shape không khớp (n_timestep khác:
+        # checkpoint 1000 vs config 100). Chúng sẽ được tính lại bởi set_new_noise_schedule.
+        model_dict = netG.state_dict()
+        filtered_state = {}
+        skipped_mismatch = []
+        for k, v in state.items():
+            if k in model_dict:
+                if model_dict[k].shape == v.shape:
+                    filtered_state[k] = v
+                else:
+                    skipped_mismatch.append(k)
+            # unexpected keys: bỏ qua
+
+        if skipped_mismatch:
+            print(
+                f"[MF_LPR_SR] Bỏ qua {len(skipped_mismatch)} key (shape mismatch, n_timestep khác) - sẽ dùng schedule từ config."
+            )
+
+        missing, unexpected = netG.load_state_dict(filtered_state, strict=False)
         if missing:
             print(
                 f"[MF_LPR_SR] Cảnh báo: thiếu {len(missing)} key khi load checkpoint SR.")
