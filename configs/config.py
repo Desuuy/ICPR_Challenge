@@ -1,7 +1,11 @@
 """Configuration dataclass for the training pipeline."""
 from dataclasses import dataclass, field
 from typing import Dict
+import os
 import torch
+
+# Project root (thư mục chứa train.py) - không phụ thuộc cwd
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 @dataclass
@@ -14,10 +18,10 @@ class Config:
     AUGMENTATION_LEVEL: str = "full"  # "full" or "light"
     USE_STN: bool = True  # Enable Spatial Transformer Network
 
-    # Data paths
-    DATA_ROOT: str = "data/train"
-    TEST_DATA_ROOT: str = "data/test"
-    VAL_SPLIT_FILE: str = "data/val_tracks.json"
+    # Data paths (tương đối project root, không phụ thuộc cwd)
+    DATA_ROOT: str = field(default_factory=lambda: os.path.join(_PROJECT_ROOT, "Data", "train"))
+    TEST_DATA_ROOT: str = field(default_factory=lambda: os.path.join(_PROJECT_ROOT, "Data", "Pa7a3Hin-test-public"))
+    VAL_SPLIT_FILE: str = field(default_factory=lambda: os.path.join(_PROJECT_ROOT, "Data", "val_tracks.json"))
     SUBMISSION_FILE: str = "submission.txt"
 
     IMG_HEIGHT: int = 32
@@ -29,7 +33,7 @@ class Config:
     # Training hyperparameters
     BATCH_SIZE: int = 64
     LEARNING_RATE: float = 0.000325
-    EPOCHS: int = 1
+    EPOCHS: int = 30
     SEED: int = 42
     NUM_WORKERS: int = 10
     WEIGHT_DECAY: float = 0.05
@@ -49,11 +53,11 @@ class Config:
     SAVE_WRONG_IMAGES: bool = True
     # Super-Resolution (MF-LPR SR) - requires sr_model/ (LP-Diff or similar)
     USE_SR: bool = True
-    SR_CHECKPOINT_PATH: str = "weights/gen_best_psnr.pth" 
-    SR_CONFIG_PATH: str = "sr_model/config/LP-Diff.json"
+    SR_CHECKPOINT_PATH: str = field(default_factory=lambda: os.path.join(_PROJECT_ROOT, "weights", "gen_best_psnr.pth"))
+    SR_CONFIG_PATH: str = field(default_factory=lambda: os.path.join(_PROJECT_ROOT, "sr_model", "config", "LP-Diff.json"))
 
     # Pretrained path
-    PRETRAINED_PATH: str = r"weights/best.pth"
+    PRETRAINED_PATH: str = field(default_factory=lambda: os.path.join(_PROJECT_ROOT, "weights", "best.pth"))
 
     # CRNN model hyperparameters
     HIDDEN_SIZE: int = 256
