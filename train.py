@@ -6,6 +6,7 @@ from src.training.trainer import Trainer
 from src.models.restran import ResTranOCR
 from src.models.crnn import MultiFrameCRNN
 from src.data.dataset import MultiFrameDataset
+from src.sr import MF_LPR_SR
 from configs.config import Config
 from torch.utils.data import DataLoader
 import torch
@@ -94,6 +95,23 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Train on full dataset and generate submission file for test data",
     )
+    parser.add_argument(
+        "--use-sr",
+        action="store_true",
+        help="Enable MF-LPR super-resolution on input frames (MF_LPR_SR)",
+    )
+    parser.add_argument(
+        "--sr-checkpoint-path",
+        type=str,
+        default=None,
+        help="Checkpoint GEN path for MF-LPR SR model (e.g. Ixxxx_Exxx_gen_best_psnr.pth)",
+    )
+    parser.add_argument(
+        "--sr-config-path",
+        type=str,
+        default=None,
+        help="Config JSON path for MF-LPR SR model (default: sr_model/config/LP-Diff.json)",
+    )
     return parser.parse_args()
 
 
@@ -120,6 +138,9 @@ def main():
         'svtr_dims': 'SVTR_DIMS',
         'svtr_depths': 'SVTR_DEPTHS',
         'svtr_heads': 'SVTR_HEADS',
+        'use_sr': 'USE_SR',
+        'sr_checkpoint_path': 'SR_CHECKPOINT_PATH',
+        'sr_config_path': 'SR_CONFIG_PATH',
     }
 
     for arg_name, config_name in arg_to_config.items():
@@ -153,6 +174,7 @@ def main():
     print(f"   BATCH_SIZE: {config.BATCH_SIZE}")
     print(f"   LEARNING_RATE: {config.LEARNING_RATE}")
     print(f"   DEVICE: {config.DEVICE}")
+    print(f"   USE_SR: {getattr(config, 'USE_SR', False)}")
     use_focal = getattr(config, 'USE_FOCAL_CTC', False)
     print(
         f"   USE_FOCAL_CTC: {use_focal}  ->  LOSS: {'Focal CTC' if use_focal else 'CTC'}")
@@ -175,6 +197,44 @@ def main():
         'same_aug_per_sample': getattr(config, 'SAME_AUG_PER_SAMPLE', True),
     }
 
+    # Optional: initialize super-resolution enhancer
+    sr_enhancer = None
+    if getattr(config, "USE_SR", False):
+        print("\n" + "="*60)
+        print("🔍 KIỂM TRA TÍCH HỢP MF-LPR SUPER-RESOLUTION")
+        print("="*60)
+        if not getattr(config, "SR_CHECKPOINT_PATH", ""):
+            print(
+                "⚠️ USE_SR=True nhưng SR_CHECKPOINT_PATH đang rỗng -> SR sẽ không được dùng.")
+            print(
+                "   💡 Để bật SR, hãy set SR_CHECKPOINT_PATH trong config hoặc dùng --sr-checkpoint-path")
+        else:
+            try:
+                print(
+                    f"📦 Đang load checkpoint SR: {config.SR_CHECKPOINT_PATH}")
+                sr_enhancer = MF_LPR_SR(
+                    checkpoint_path=config.SR_CHECKPOINT_PATH,
+                    config_path=getattr(
+                        config, "SR_CONFIG_PATH", "sr_model/config/LP-Diff.json"),
+                    device=config.DEVICE,
+                )
+                print("✅ MF-LPR Super-Resolution đã được khởi tạo thành công!")
+                print(f"   - Device: {config.DEVICE}")
+                print(f"   - Checkpoint: {config.SR_CHECKPOINT_PATH}")
+                print(
+                    f"   - Config: {getattr(config, 'SR_CONFIG_PATH', 'sr_model/config/LP-Diff.json')}")
+                print(
+                    "   - Status: SR sẽ được áp dụng cho TẤT CẢ frames trong dataset (train/val/test)")
+                print("="*60 + "\n")
+            except Exception as e:
+                print(f"❌ Không thể khởi tạo MF_LPR_SR, sẽ tắt SR. Lý do: {e}")
+                import traceback
+                traceback.print_exc()
+                sr_enhancer = None
+                print("="*60 + "\n")
+    else:
+        print(f"\nℹ️  USE_SR=False -> Pipeline chạy KHÔNG có Super-Resolution\n")
+
     # Create datasets based on mode
     if args.submission_mode:
         print("\n📌 SUBMISSION MODE ENABLED")
@@ -186,6 +246,7 @@ def main():
             root_dir=config.DATA_ROOT,
             mode='train',
             full_train=True,
+            sr_enhancer=sr_enhancer,
             **common_ds_params
         )
 
@@ -200,6 +261,7 @@ def main():
                 char2idx=config.CHAR2IDX,
                 seed=config.SEED,
                 is_test=True,
+                sr_enhancer=sr_enhancer,
             )
             test_loader = DataLoader(
                 test_ds,
@@ -219,12 +281,14 @@ def main():
         train_ds = MultiFrameDataset(
             root_dir=config.DATA_ROOT,
             mode='train',
+            sr_enhancer=sr_enhancer,
             **common_ds_params
         )
 
         val_ds = MultiFrameDataset(
             root_dir=config.DATA_ROOT,
             mode='val',
+            sr_enhancer=sr_enhancer,
             **common_ds_params
         )
 
