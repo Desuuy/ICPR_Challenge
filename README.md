@@ -1,63 +1,96 @@
 # MultiFrame-LPR
 
-Multi-frame OCR solution for the **ICPR 2026 Challenge on Low-Resolution License Plate Recognition**.
-
-This implementation combines temporal information from 5 video frames using attention fusion mechanisms to achieve robust recognition on low-resolution license plates.
+Multi-frame OCR solution for the **ICPR 2026 Challenge on Low-Resolution License Plate Recognition (LRLPR)**. This implementation fuses temporal information from 5 video frames using attention-based fusion to achieve robust recognition on low-resolution license plates.
 
 🔗 **Challenge:** [ICPR 2026 LRLPR](https://icpr26lrlpr.github.io/)
+
+---
+
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Key Features](#key-features)
+- [Model Architectures](#model-architectures)
+- [Installation](#installation)
+- [Data Preparation](#data-preparation)
+- [Usage](#usage)
+- [Super-Resolution (Optional)](#super-resolution-optional)
+- [Configuration](#configuration)
+- [Outputs](#outputs)
+- [Project Structure](#project-structure)
+- [License](#license)
 
 ---
 
 ## Quick Start
 
 ```bash
-# Optional download gdown when using with google drive 
-pip install gdown
+# Clone repository
+git clone https://github.com/Desuuy/ICPR_Challenge.git
+cd ICPR_Challenge
 
-# Active venv
-.\.venv\Scripts\Activate.ps1
-
-# Active venv in Linux
-source .venv/bin/activate
-
-# Install dependencies
+# Install dependencies (uv recommended)
 uv sync
 
-# Train with default settings (ResTranOCR + STN)
+# Activate virtual environment
+# Windows:
+.\.venv\Scripts\Activate.ps1
+# Linux/macOS:
+source .venv/bin/activate
+
+# Train with default model (MF-SVTRv2 + STN)
 python train.py
 
-# Train CRNN baseline
-python train.py --model crnn --experiment-name crnn_baseline
+# Train with Super-Resolution
+python train.py --use-sr --sr-checkpoint-path weights/I80000_E41_gen_best_psnr.pth
 
 # Generate submission file
-python train.py --submission-mode --model restran
+python train.py --submission-mode --test-data-root data/public_test
 ```
 
 ---
 
 ## Key Features
 
-- **Multi-Frame Fusion**: Processes 5-frame sequences with attention-based fusion
-- **Spatial Transformer Network**: Optional STN module for automatic image alignment
-- **Dual Architectures**: CRNN (baseline) and ResTranOCR (ResNet34 + Transformer)
-- **Smart Data Augmentation**: Scenario-B aware validation split with configurable augmentation levels
-- **Production Ready**: Mixed precision training, gradient clipping, OneCycleLR scheduler
+| Feature | Description |
+|---------|-------------|
+| **Multi-Frame Fusion** | Processes 5-frame sequences with attention-based fusion |
+| **Spatial Transformer Network (STN)** | Optional automatic image alignment for warped plates |
+| **Three Architectures** | CRNN (baseline), ResTranOCR, MF-SVTRv2 (default) |
+| **Super-Resolution** | Optional LP-Diff integration for degraded input enhancement |
+| **Focal CTC** | Sample-level weighting for hard sample focus |
+| **Scenario-B Aware Split** | Validation prioritizes challenging scenarios |
+| **Mixed Precision** | FP16 training with gradient scaling |
+| **Wrong Prediction Analysis** | Saves wrong predictions and copies images for inspection |
 
 ---
 
 ## Model Architectures
 
+### MF-SVTRv2 (Default)
+
+**Pipeline:** Multi-frame Input → STN (optional) → SVTRv2LNConvTwo33 Backbone → Attention Fusion → RCTC Decoder → CTC
+
+- **Backbone:** SVTRv2-Small (dims=[128,256,384], depths=[6,6,6])
+- **Fusion:** Attention-based temporal fusion
+- **Decoder:** RCTC (CTC head)
+- **Pretrained:** Supports UniRec/OpenRec checkpoint loading
+
+### ResTranOCR
+
+**Pipeline:** Multi-frame Input → STN (optional) → ResNet34 → Attention Fusion → Transformer Encoder → CTC
+
+- **Backbone:** ResNet34 feature extractor
+- **Sequence:** Transformer with positional encoding
+
 ### CRNN (Baseline)
-**Pipeline:** Multi-frame Input → STN Alignment → CNN → Attention Fusion → BiLSTM → CTC
 
-Simple and effective baseline using convolutional features and bidirectional LSTM for sequence modeling.
+**Pipeline:** Multi-frame Input → STN (optional) → CNN → Attention Fusion → BiLSTM → CTC
 
-### ResTranOCR (Advanced)
-**Pipeline:** Multi-frame Input → STN Alignment → ResNet34 → Attention Fusion → Transformer → CTC
+- **Backbone:** Lightweight CNN
+- **Sequence:** Bidirectional LSTM
 
-Modern architecture leveraging ResNet34 backbone and Transformer encoder with positional encoding for improved long-range dependencies.
-
-**Both models accept input shape:** `(Batch, 5, 3, 32, 128)` and output character sequences via CTC decoding.
+**All models accept input shape:** `(Batch, 5, 3, 32, 128)` and output character sequences via CTC decoding.
 
 ---
 
@@ -66,11 +99,10 @@ Modern architecture leveraging ResNet34 backbone and Transformer encoder with po
 **Requirements:**
 - Python 3.11+
 - CUDA-enabled GPU (recommended)
+- Windows / Linux / macOS
 
 **Using uv (recommended):**
 ```bash
-git clone https://github.com/Desuuy/ICPR_Challenge.git
-cd MultiFrame-LPR
 uv sync
 ```
 
@@ -82,9 +114,7 @@ pip install albumentations opencv-python matplotlib numpy pandas tqdm
 
 ---
 
-## Usage
-
-### Data Preparation
+## Data Preparation
 
 Organize your dataset with the following structure:
 
@@ -93,8 +123,10 @@ data/train/
 ├── track_001/
 │   ├── lr-001.png
 │   ├── lr-002.png
-│   ├── ...
-│   ├── hr-001.png (optional, for synthetic LR generation)
+│   ├── lr-003.png
+│   ├── lr-004.png
+│   ├── lr-005.png
+│   ├── hr-001.png        # Optional: for synthetic LR generation
 │   └── annotations.json
 └── track_002/
     └── ...
@@ -104,63 +136,91 @@ data/train/
 ```json
 {"plate_text": "ABC1234"}
 ```
-
-### Training
-
-**Basic training:**
-```bash
-python train.py
+or
+```json
+{"license_plate": "ABC1234"}
 ```
 
-**Custom configuration:**
+**Test data** (for submission): Same structure under `data/public_test/` (or `--test-data-root`).
+
+---
+
+## Usage
+
+### Basic Training
+
+```bash
+# Default: MF-SVTRv2, full augmentation, STN enabled
+python train.py
+
+# CRNN baseline
+python train.py --model crnn --experiment-name crnn_baseline
+
+# ResTranOCR
+python train.py --model restran --experiment-name restran_exp
+```
+
+### Custom Configuration
+
 ```bash
 python train.py \
-    --model restran \
-    --experiment-name my_experiment \
+    --model mf_svtrv2 \
+    --experiment-name my_exp \
     --data-root /path/to/dataset \
-    --batch-size 64 \
+    --batch-size 32 \
     --epochs 30 \
-    --lr 0.0005 \
+    --lr 0.000325 \
     --aug-level full
 ```
 
-**Disable STN:**
+### Submission Mode
+
+Train on full dataset (no validation split) and generate predictions for test data:
+
+```bash
+python train.py --submission-mode --test-data-root data/public_test
+```
+
+### Disable STN
+
 ```bash
 python train.py --no-stn
 ```
 
-**Key arguments:**
-- `-m, --model`: Model type (`crnn` or `restran`)
-- `-n, --experiment-name`: Experiment identifier
-- `--data-root`: Path to training data (default: `data/train`)
-- `--batch-size`: Batch size (default: 64)
-- `--epochs`: Training epochs (default: 30)
-- `--lr`: Learning rate (default: 5e-4)
-- `--aug-level`: Augmentation level (`full` or `light`)
-- `--no-stn`: Disable Spatial Transformer Network
-- `--submission-mode`: Train on full dataset and generate test predictions
-- `--output-dir`: Output directory (default: `results/`)
+### Command-Line Arguments
 
-### Ablation Studies
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `-m, --model` | Model type: `crnn`, `restran`, `mf_svtrv2` | `mf_svtrv2` |
+| `-n, --experiment-name` | Experiment identifier | from config |
+| `--data-root` | Training data path | `data/train` |
+| `--test-data-root` | Test data path (submission mode) | `data/public_test` |
+| `--batch-size` | Batch size | 64 |
+| `--epochs` | Training epochs | from config |
+| `--lr` | Learning rate | 0.000325 |
+| `--aug-level` | `full` or `light` | `full` |
+| `--no-stn` | Disable STN | False |
+| `--submission-mode` | Full train + test inference | False |
+| `--use-sr` | Enable Super-Resolution | False |
+| `--sr-checkpoint-path` | SR checkpoint (GEN) path | from config |
+| `--sr-config-path` | SR config JSON path | `sr_model/config/LP-Diff.json` |
+| `--output-dir` | Output directory | `results/` |
 
-Run automated experiments comparing different configurations:
+---
+
+## Super-Resolution (Optional)
+
+Optional integration with **LP-Diff** (MF-LPR SR) to enhance low-resolution frames before OCR:
+
+1. Place LP-Diff code in `sr_model/` (see [LP-Diff](https://github.com/haoyGONG/LP-Diff))
+2. Download GEN checkpoint (e.g. `I80000_E41_gen_best_psnr.pth`)
+3. Run with SR:
 
 ```bash
-python run_ablation.py
+python train.py --use-sr --sr-checkpoint-path weights/I80000_E41_gen_best_psnr.pth
 ```
 
-Experiments:
-- CRNN with/without STN
-- ResTranOCR with/without STN
-
-Results saved in `experiments/ablation_summary.txt`.
-
-### Outputs
-
-After training, the following files are generated in the output directory:
-
-- `{experiment_name}_best.pth` - Best model checkpoint
-- `submission_{experiment_name}.txt` - Predictions in competition format: `track_id,predicted_text;confidence`
+SR is applied per-sample in the dataset before augmentation/transform.
 
 ---
 
@@ -168,26 +228,32 @@ After training, the following files are generated in the output directory:
 
 Key hyperparameters in `configs/config.py`:
 
-```python
-MODEL_TYPE = "restran"           # "crnn" or "restran"
-USE_STN = True                   # Enable/disable STN
-BATCH_SIZE = 64
-LEARNING_RATE = 5e-4
-EPOCHS = 30
-AUGMENTATION_LEVEL = "full"      # "full" or "light"
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `MODEL_TYPE` | `crnn` / `restran` / `mf_svtrv2` | `mf_svtrv2` |
+| `USE_STN` | Enable STN | `True` |
+| `USE_FOCAL_CTC` | Focal-style CTC loss | `True` |
+| `SAVE_WRONG_PREDICTIONS` | Save wrong predictions file | `True` |
+| `SAVE_WRONG_IMAGES` | Copy wrong images to results | `True` |
+| `USE_SR` | Enable Super-Resolution | `False` |
+| `IMG_HEIGHT`, `IMG_WIDTH` | Input size | 32, 128 |
+| `PRETRAINED_PATH` | OCR pretrained checkpoint | `weights/best.pth` |
 
-# CRNN specific
-HIDDEN_SIZE = 256
-RNN_DROPOUT = 0.25
+All parameters can be overridden via CLI.
 
-# ResTranOCR specific
-TRANSFORMER_HEADS = 8
-TRANSFORMER_LAYERS = 3
-TRANSFORMER_FF_DIM = 2048
-TRANSFORMER_DROPOUT = 0.1
-```
+---
 
-All config parameters can be overridden via CLI arguments.
+## Outputs
+
+After training, outputs are saved in `results/` (or `--output-dir`):
+
+| File | Description |
+|------|-------------|
+| `{exp}_best.pth` | Best model checkpoint (by val accuracy) |
+| `{exp}_final.pth` | Final epoch checkpoint (normal mode) |
+| `submission_{exp}.txt` | Predictions: `track_id,pred;confidence` |
+| `wrong_predictions_{exp}.txt` | Wrong predictions with gt, pred, img_paths |
+| `wrong_images_{exp}/` | Copied images for wrong predictions |
 
 ---
 
@@ -196,33 +262,29 @@ All config parameters can be overridden via CLI arguments.
 ```
 .
 ├── configs/
-│   └── config.py              # Configuration dataclass
+│   └── config.py              # Configuration
 ├── src/
 │   ├── data/
-│   │   ├── dataset.py         # MultiFrameDataset with scenario-aware splitting
-│   │   └── transforms.py      # Augmentation pipelines
+│   │   ├── dataset.py         # MultiFrameDataset
+│   │   └── transforms.py     # Augmentation
 │   ├── models/
-│   │   ├── crnn.py            # CRNN baseline
-│   │   ├── restran.py         # ResTranOCR advanced model
-│   │   └── components.py      # Shared modules (STN, AttentionFusion, etc.)
+│   │   ├── crnn.py
+│   │   ├── restran.py
+│   │   └── components.py     # STN, AttentionFusion
+│   ├── sr/
+│   │   └── mf_lpr_sr.py      # SR adapter (LP-Diff)
 │   ├── training/
-│   │   └── trainer.py         # Training loop and validation
-│   └── utils/
-│       ├── common.py          # Utility functions
-│       └── postprocess.py     # CTC decoding
-├── train.py                   # Main training script
-├── run_ablation.py            # Ablation study automation
-└── pyproject.toml             # Dependencies
+│   │   └── trainer.py
+│   ├── utils/
+│   └── mf_svtrv2.py          # MF-SVTRv2 model
+├── sr_model/                  # LP-Diff (optional)
+├── train.py
+├── run_ablation.py
+└── pyproject.toml
 ```
 
 ---
 
-## Technical Details
+## License
 
-### Attention Fusion Module
-Dynamically computes attention weights across temporal frames and fuses multi-frame features into a single representation before sequence modeling.
-
-### Data Augmentation
-- **Full mode**: Affine transforms, perspective warping, HSV adjustment, coarse dropout
-- **Light mode**: Resize and normalize only
-- **Scenario-B aware splitting**: Validation set prioritizes challenging scenarios to prevent overfitting.
+See repository license.
