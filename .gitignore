@@ -11,7 +11,8 @@ env/
 # Data & Datasets
 /data/
 *.json
-!data/val_tracks.json  
+!data/val_tracks.json
+!sr_model/config/*.json  
 
 # Model Checkpoints
 *.pth
