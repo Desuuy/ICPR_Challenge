@@ -43,8 +43,14 @@ class Config:
     CTC_BEAM_WIDTH: int = 1      # 1 = greedy decode; 5–10 = beam search
     SAME_AUG_PER_SAMPLE: bool = True  # Same augmentation for all 5 frames
     DROPOUT: float = 0.1         # Dropout in STN/Fusion (0 = disabled)
-    # Lưu danh sách sample dự đoán sai (để phân tích)
+    # Save wrong predictions for analysis
     SAVE_WRONG_PREDICTIONS: bool = True
+    # Copy wrong-prediction images to results/wrong_images_*/ for inspection
+    SAVE_WRONG_IMAGES: bool = True
+    # Super-Resolution (MF-LPR SR) - requires sr_model/ (LP-Diff or similar)
+    USE_SR: bool = False
+    SR_CHECKPOINT_PATH: str = "weights/I80000_E41_gen_best_psnr.pth"  # GEN model, not opt
+    SR_CONFIG_PATH: str = "sr_model/config/LP-Diff.json"
 
     # CRNN model hyperparameters
     HIDDEN_SIZE: int = 256
