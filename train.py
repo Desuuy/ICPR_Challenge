@@ -253,6 +253,12 @@ def main():
     else:
         print(f"\nℹ️  USE_SR=False -> Pipeline chạy KHÔNG có Super-Resolution\n")
 
+    # Khi dùng SR trong dataset: __getitem__ chạy CUDA trong worker -> fork + CUDA lỗi
+    # Bắt buộc num_workers=0 để tránh "Cannot re-initialize CUDA in forked subprocess"
+    num_workers = 0 if sr_enhancer is not None else config.NUM_WORKERS
+    if sr_enhancer is not None:
+        print(f"⚠️  USE_SR=True -> num_workers=0 (tránh lỗi CUDA fork)\n")
+
     # Create datasets based on mode
     if args.submission_mode:
         print("\n📌 SUBMISSION MODE ENABLED")
@@ -286,7 +292,7 @@ def main():
                 batch_size=config.BATCH_SIZE,
                 shuffle=False,
                 collate_fn=MultiFrameDataset.collate_fn,
-                num_workers=config.NUM_WORKERS,
+                num_workers=num_workers,
                 pin_memory=True
             )
         else:
@@ -317,7 +323,7 @@ def main():
                 batch_size=config.BATCH_SIZE,
                 shuffle=False,
                 collate_fn=MultiFrameDataset.collate_fn,
-                num_workers=config.NUM_WORKERS,
+                num_workers=num_workers,
                 pin_memory=True
             )
         else:
@@ -335,7 +341,7 @@ def main():
         batch_size=config.BATCH_SIZE,
         shuffle=True,
         collate_fn=MultiFrameDataset.collate_fn,
-        num_workers=config.NUM_WORKERS,
+        num_workers=num_workers,
         pin_memory=True
     )
 
