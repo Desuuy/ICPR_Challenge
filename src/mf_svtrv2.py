@@ -56,7 +56,12 @@ class MultiFrameSVTRv2(nn.Module):
         self.head = RCTCDecoder(in_channels=384, out_channels=num_classes)
 
     def load_unirec_weights(self, weight_path: str):
-        """Nạp trọng số UniRec/checkpoint vào model (lọc theo tên + shape, hỗ trợ remap key)."""
+        """Nạp trọng số UniRec/GTC checkpoint vào model.
+
+        Checkpoint từ weights/config.yml (GTCDecoder) có cấu trúc:
+        - encoder.* -> backbone.*
+        - decoder.ctc_decoder.* -> head.*
+        """
         if not os.path.exists(weight_path):
             print(f"⚠️ Không tìm thấy file tại: {weight_path}")
             return
@@ -69,35 +74,49 @@ class MultiFrameSVTRv2(nn.Module):
         state_dict = checkpoint.get('state_dict', checkpoint)
         model_dict = self.state_dict()
 
-        # Thử load trực tiếp trước
-        filtered_dict = {
-            k: v for k, v in state_dict.items()
-            if k in model_dict and v.size() == model_dict[k].size()
-        }
+        def remap_key(key: str) -> str:
+            key = key.replace("module.", "")
+            key = key.replace("encoder.", "backbone.")
+            # GTCDecoder: decoder.ctc_decoder.* -> head.*
+            key = key.replace("decoder.ctc_decoder.", "head.")
+            return key
 
-        # Nếu 0 layer khớp, thử remap key (UniRec/openrec dùng "encoder.", DDP dùng "module.")
+        # Remap toàn bộ checkpoint trước
+        state_dict_remap = {remap_key(k): v for k, v in state_dict.items()}
+
+        filtered_dict = {}
+        for k, v in state_dict_remap.items():
+            if k not in model_dict:
+                continue
+            md_shape = model_dict[k].shape
+            if v.shape == md_shape:
+                filtered_dict[k] = v
+            elif k == "head.fc.weight" and v.dim() == 2:
+                # Checkpoint có vocab lớn (6625), model có 37 classes -> slice N class đầu
+                if v.shape[1] == md_shape[1] and v.shape[0] >= md_shape[0]:
+                    filtered_dict[k] = v[:md_shape[0], :].clone()
+                elif v.shape == md_shape:
+                    filtered_dict[k] = v
+            elif k == "head.fc.bias" and v.dim() == 1:
+                if v.shape[0] >= md_shape[0]:
+                    filtered_dict[k] = v[:md_shape[0]].clone()
+                elif v.shape == md_shape:
+                    filtered_dict[k] = v
+
         if len(filtered_dict) == 0 and len(state_dict) > 0:
-            def remap_key(key: str) -> str:
-                key = key.replace("module.", "")
-                key = key.replace("encoder.", "backbone.")
-                return key
-            state_dict_remap = {remap_key(k): v for k, v in state_dict.items()}
-            filtered_dict = {
-                k: v for k, v in state_dict_remap.items()
-                if k in model_dict and v.size() == model_dict[k].size()
-            }
-        if len(filtered_dict) == 0 and len(state_dict) > 0:
-            # In vài key mẫu để debug
-            ck_keys = list(state_dict.keys())[:5]
-            md_keys = list(model_dict.keys())[:5]
+            ck_keys = list(state_dict.keys())[:8]
+            md_keys = list(model_dict.keys())[:8]
             print(f"   (Checkpoint keys mẫu: {ck_keys})")
             print(f"   (Model keys mẫu: {md_keys})")
 
         model_dict.update(filtered_dict)
-        self.load_state_dict(model_dict)
+        self.load_state_dict(model_dict, strict=False)
 
+        loaded_head = sum(1 for k in filtered_dict if k.startswith("head."))
+        loaded_backbone = sum(1 for k in filtered_dict if k.startswith("backbone."))
         print(
-            f"✅ Đã nạp thành công {len(filtered_dict)} layers từ checkpoint.")
+            f"✅ Đã nạp thành công {len(filtered_dict)} layers từ checkpoint "
+            f"(backbone: {loaded_backbone}, head: {loaded_head})")
 
     # Load weights
     def load_weights(self, weight_path: str):

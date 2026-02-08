@@ -15,7 +15,8 @@ import os
 import sys
 
 # Giảm phân mảnh CUDA (tránh OOM do fragmentation)
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+# PYTORCH_CUDA_ALLOC_CONF deprecated -> dùng PYTORCH_ALLOC_CONF
+os.environ.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True")
 
 
 # Add project root to path for imports
@@ -123,6 +124,11 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Override n_timestep cho SR inference (10=nhanh, 100=mặc định, 1000=chất lượng cao; None=theo LP-Diff.json)",
+    )
+    parser.add_argument(
+        "--no-pretrained",
+        action="store_true",
+        help="Không load pretrained weights (train từ đầu) - dùng khi best.pth không tương thích",
     )
     return parser.parse_args()
 
@@ -378,18 +384,20 @@ def main():
 
         # Nạp trọng số Pretrained UniRec40M
         pretrained_loaded = False
-        if hasattr(config, 'PRETRAINED_PATH') and config.PRETRAINED_PATH:
+        if not args.no_pretrained and hasattr(config, 'PRETRAINED_PATH') and config.PRETRAINED_PATH:
             if os.path.exists(config.PRETRAINED_PATH):
                 print(
                     f"\n🔄 Loading Pretrained Weights: {config.PRETRAINED_PATH}")
                 model.load_weights(config.PRETRAINED_PATH)
                 pretrained_loaded = True
             else:
-                print(
-                    f"\n⚠️ Pretrained path không tồn tại: {config.PRETRAINED_PATH}")
-                print(f"   Model sẽ được train từ đầu (random initialization)")
+                print(f"\n⚠️ Pretrained path không tồn tại: {config.PRETRAINED_PATH}")
         else:
-            print(f"\nℹ️ Không có PRETRAINED_PATH trong config")
+            if args.no_pretrained:
+                print(f"\nℹ️ --no-pretrained: Không load weights, train từ đầu")
+            else:
+                print(f"\nℹ️ Không có PRETRAINED_PATH trong config")
+        if not pretrained_loaded:
             print(f"   Model sẽ được train từ đầu (random initialization)")
     elif config.MODEL_TYPE == "restran":
         model = ResTranOCR(

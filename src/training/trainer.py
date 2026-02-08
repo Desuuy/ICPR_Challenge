@@ -81,6 +81,7 @@ class Trainer:
         """Train for one epoch."""
         self.model.train()
         epoch_loss = 0.0
+        skipped_nan = 0  # Đếm batch bị bỏ qua do loss NaN
         pbar = tqdm(self.train_loader,
                     desc=f"Ep {self.current_epoch + 1}/{self.config.EPOCHS}")
         prev_optimizer_stepped = False
@@ -120,6 +121,7 @@ class Trainer:
 
             # Bỏ qua batch nếu loss nan/inf (tránh làm hỏng trọng số)
             if not torch.isfinite(loss).all():
+                skipped_nan += 1
                 pbar.set_postfix(
                     {'loss': 'nan(skip)', 'lr': self.scheduler.get_last_lr()[0]})
                 continue
@@ -149,7 +151,12 @@ class Trainer:
         if prev_optimizer_stepped:
             self.scheduler.step()
 
-        return epoch_loss / len(self.train_loader)
+        if skipped_nan > 0:
+            print(f"   ⚠️ Skipped {skipped_nan}/{len(self.train_loader)} batches (loss NaN). "
+                  "Thử --no-pretrained hoặc giảm LEARNING_RATE.")
+
+        valid_batches = len(self.train_loader) - skipped_nan
+        return epoch_loss / valid_batches if valid_batches > 0 else float('nan')
 
     def validate(self) -> Tuple[Dict[str, float], List[str], List[Tuple[str, str, str, float, str]]]:
         """Run validation and generate submission data.
@@ -163,6 +170,7 @@ class Trainer:
 
         self.model.eval()
         val_loss = 0.0
+        val_loss_count = 0  # Số batch có loss hợp lệ (không NaN)
         total_correct = 0
         total_samples = 0
         all_preds: List[str] = []
@@ -187,7 +195,10 @@ class Trainer:
                     input_lengths,
                     target_lengths
                 )
-                val_loss += loss.item()
+                # Bỏ qua batch validation nếu loss NaN/inf (tránh val_loss=nan)
+                if torch.isfinite(loss):
+                    val_loss += loss.item()
+                    val_loss_count += 1
 
                 beam_width = getattr(self.config, 'CTC_BEAM_WIDTH', 1)
                 decoded_list = decode_with_confidence(
@@ -212,7 +223,7 @@ class Trainer:
 
                 total_samples += len(labels_text)
 
-        avg_val_loss = val_loss / len(self.val_loader)
+        avg_val_loss = val_loss / val_loss_count if val_loss_count > 0 else float('nan')
         val_acc = (total_correct / total_samples) * \
             100 if total_samples > 0 else 0.0
         val_cer = compute_cer(all_preds, list(all_targets))

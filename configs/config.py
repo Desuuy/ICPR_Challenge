@@ -16,7 +16,7 @@ class Config:
     MODEL_TYPE: str = "mf_svtrv2"  # "crnn" or "restran" or "mf_svtrv2"
     EXPERIMENT_NAME: str = MODEL_TYPE
     AUGMENTATION_LEVEL: str = "full"  # "full" or "light"
-    USE_STN: bool = True  # Enable Spatial Transformer Network
+    USE_STN: bool = False  # Enable Spatial Transformer Network (False to avoid NaN when STN chưa học)
 
     # Data paths (tương đối project root, không phụ thuộc cwd)
     DATA_ROOT: str = field(default_factory=lambda: os.path.join(
@@ -28,25 +28,25 @@ class Config:
     SUBMISSION_FILE: str = "submission.txt"
 
     IMG_HEIGHT: int = 32
-    IMG_WIDTH: int = 128
+    IMG_WIDTH: int = 128  # Backbone hardcode max_sz=[32,128]; tăng cần sửa mf_svtrv2.py
 
     # Character set
-    CHARS: str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-."
+    CHARS: str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
     # Training hyperparameters
     BATCH_SIZE: int = 64
-    LEARNING_RATE: float = 0.000325
-    EPOCHS: int = 30
+    LEARNING_RATE: float = 0.0065 # Giảm từ 0.00325 để tránh gradient explosion/NaN
+    EPOCHS: int = 1
     SEED: int = 42
     NUM_WORKERS: int = 10
     WEIGHT_DECAY: float = 0.05
-    GRAD_CLIP: float = 5.0
+    GRAD_CLIP: float = 3.0  # Giảm từ 5.0 để ổn định gradient, tránh NaN
     SPLIT_RATIO: float = 0.9
     USE_CUDNN_BENCHMARK: bool = False
 
     # Accuracy improvements (see docs/IMPROVEMENT_PROPOSALS.md)
     # Focus on hard samples (sample-level weighting)
-    USE_FOCAL_CTC: bool = True
+    USE_FOCAL_CTC: bool = False 
     CTC_BEAM_WIDTH: int = 1      # 1 = greedy decode; 5–10 = beam search
     SAME_AUG_PER_SAMPLE: bool = True  # Same augmentation for all 5 frames
     DROPOUT: float = 0.1         # Dropout in STN/Fusion (0 = disabled)
@@ -55,7 +55,7 @@ class Config:
     # Copy wrong-prediction images to results/wrong_images_*/ for inspection
     SAVE_WRONG_IMAGES: bool = True
     # Super-Resolution (MF-LPR SR) - requires sr_model/ (LP-Diff or similar)
-    USE_SR: bool = True
+    USE_SR: bool = False
     SR_CHECKPOINT_PATH: str = field(default_factory=lambda: os.path.join(
         _PROJECT_ROOT, "weights", "gen_best_psnr.pth"))
     SR_CONFIG_PATH: str = field(default_factory=lambda: os.path.join(
