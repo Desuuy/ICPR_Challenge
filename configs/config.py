@@ -35,12 +35,12 @@ class Config:
 
     # Training hyperparameters
     BATCH_SIZE: int = 64
-    LEARNING_RATE: float = 0.0065 # Giảm từ 0.00325 để tránh gradient explosion/NaN
+    LEARNING_RATE: float = 0.00065 # Giảm từ 0.00325 để tránh gradient explosion/NaN
     EPOCHS: int = 1
     SEED: int = 42
     NUM_WORKERS: int = 10
     WEIGHT_DECAY: float = 0.05
-    GRAD_CLIP: float = 3.0  # Giảm từ 5.0 để ổn định gradient, tránh NaN
+    GRAD_CLIP: float = 1.0  # Giảm từ 5.0 để ổn định gradient, tránh NaN
     SPLIT_RATIO: float = 0.9
     USE_CUDNN_BENCHMARK: bool = False
 
