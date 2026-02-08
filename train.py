@@ -13,6 +13,27 @@ import torch
 import argparse
 import os
 import sys
+from datetime import datetime
+
+
+class Tee:
+    """Ghi đồng thời ra stdout và file."""
+    def __init__(self, filepath: str):
+        self.file = open(filepath, 'w', encoding='utf-8')
+        self.stdout = sys.stdout
+
+    def write(self, data: str):
+        self.stdout.write(data)
+        self.file.write(data)
+        self.file.flush()
+
+    def flush(self):
+        self.stdout.flush()
+        self.file.flush()
+
+    def close(self):
+        self.file.close()
+        sys.stdout = self.stdout
 
 # Giảm phân mảnh CUDA (tránh OOM do fragmentation)
 # PYTORCH_CUDA_ALLOC_CONF deprecated -> dùng PYTORCH_ALLOC_CONF
@@ -188,7 +209,21 @@ def main():
     config.OUTPUT_DIR = args.output_dir
     os.makedirs(config.OUTPUT_DIR, exist_ok=True)
 
-    seed_everything(config.SEED)
+    # Ghi log terminal vào file (results/train_log_YYYYMMDD_HHMMSS.txt)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    log_path = os.path.join(config.OUTPUT_DIR, f"train_log_{timestamp}.txt")
+    tee = Tee(log_path)
+    sys.stdout = tee
+    print(f"📋 Logging to {log_path}")
+
+    try:
+        _run_training(args, config)
+    finally:
+        tee.close()
+        print(f"📋 Log đã lưu: {log_path}")
+
+
+def _run_training(args, config):
 
     # Làm trống cache CUDA và in bộ nhớ GPU mỗi lần chạy
     if config.DEVICE.type == "cuda":
