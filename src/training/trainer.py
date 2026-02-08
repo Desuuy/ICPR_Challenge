@@ -1,4 +1,6 @@
 """Trainer class encapsulating the training and validation loop."""
+import json
+import math
 import os
 from typing import Dict, List, Optional, Tuple
 
@@ -66,6 +68,7 @@ class Trainer:
         # Tracking
         self.best_acc = 0.0
         self.current_epoch = 0
+        self.history: List[Dict] = []  # Lưu lịch sử metrics mỗi epoch
 
     def _get_output_path(self, filename: str) -> str:
         """Get full path for output file in configured directory."""
@@ -232,6 +235,10 @@ class Trainer:
             'loss': avg_val_loss,
             'acc': val_acc,
             'cer': val_cer,
+            'correct': total_correct,
+            'total': total_samples,
+            'preds': all_preds,
+            'targets': all_targets,
         }
 
         return metrics, submission_data, wrong_predictions
@@ -311,13 +318,32 @@ class Trainer:
             val_loss = val_metrics['loss']
             val_acc = val_metrics['acc']
             val_cer = val_metrics.get('cer', 0.0)
+            val_correct = val_metrics.get('correct', 0)
+            val_total = val_metrics.get('total', 0)
             current_lr = self.scheduler.get_last_lr()[0]
 
-            # Log results
+            # Lưu history
+            epoch_record = {
+                'epoch': epoch + 1,
+                'train_loss': avg_train_loss if not (isinstance(avg_train_loss, float) and math.isnan(avg_train_loss)) else None,
+                'val_loss': val_loss if not (isinstance(val_loss, float) and math.isnan(val_loss)) else None,
+                'val_acc': val_acc,
+                'val_cer': val_cer,
+                'val_correct': val_correct,
+                'val_total': val_total,
+                'lr': current_lr,
+            }
+            self.history.append(epoch_record)
+
+            # Cảnh báo nếu val_total = 0 (có thể val split sai)
+            if val_total == 0 and self.val_loader:
+                print(f"   ⚠️ Val total=0! Kiểm tra val_tracks.json và DATA_ROOT.")
+
+            # Log results (thêm correct/total để debug val)
             print(f"Epoch {epoch + 1}/{self.config.EPOCHS}: "
                   f"Train Loss: {avg_train_loss:.4f} | "
                   f"Val Loss: {val_loss:.4f} | "
-                  f"Val Acc: {val_acc:.2f}% | "
+                  f"Val Acc: {val_acc:.2f}% ({val_correct}/{val_total}) | "
                   f"Val CER: {val_cer:.4f} | "
                   f"LR: {current_lr:.2e}")
 
@@ -337,8 +363,19 @@ class Trainer:
                 if getattr(self.config, 'SAVE_WRONG_IMAGES', True):
                     self.save_wrong_images(wrong_predictions)
 
-        # Luôn lưu .pth khi chạy xong (cả SUBMISSION_MODE True/False)
+        # Lưu training history
         exp_name = self._get_exp_name()
+        history_path = self._get_output_path(f"training_history_{exp_name}.json")
+        with open(history_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'experiment': exp_name,
+                'best_val_acc': self.best_acc,
+                'epochs': self.config.EPOCHS,
+                'history': self.history,
+            }, f, indent=2, ensure_ascii=False)
+        print(f"📊 Saved training history to {history_path}")
+
+        # Luôn lưu .pth khi chạy xong (cả SUBMISSION_MODE True/False)
         if self.val_loader is None:
             # Submission mode: best đã là model cuối, lưu vào _best.pth
             self.save_model()
@@ -351,6 +388,9 @@ class Trainer:
             print(f"  💾 Saved final model: {final_path}")
 
         print(f"\n✅ Training complete! Best Val Acc: {self.best_acc:.2f}%")
+        if self.history and self.val_loader:
+            last = self.history[-1]
+            print(f"   Val: {last.get('val_correct', 0)}/{last.get('val_total', 0)} correct")
 
     def predict(self, loader: DataLoader) -> List[Tuple[str, str, float]]:
         """Run inference on a data loader.
