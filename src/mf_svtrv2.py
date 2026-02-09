@@ -14,13 +14,13 @@ if current_dir not in sys.path:
 
 
 
-from src.models.components import STNBlock, AttentionFusion
+from src.models.components import STNBlock, AttentionFusion, TemperatureScaling
 from .openrec.modeling.encoders.svtrv2_lnconv_two33 import SVTRv2LNConvTwo33
 from .openrec.modeling.decoders.rctc_decoder import RCTCDecoder
 
 
 class MultiFrameSVTRv2(nn.Module):
-    def __init__(self, num_classes, use_stn=True, dropout=0.0):
+    def __init__(self, num_classes, use_stn=True, dropout=0.0, use_temp_scaling=True):
         super().__init__()
         self.use_stn = use_stn
         # 1. STN để nắn thẳng biển số trước khi vào backbone
@@ -54,6 +54,12 @@ class MultiFrameSVTRv2(nn.Module):
 
         # 4. Head (RCTCDecoder) cũng nhận 384 channels
         self.head = RCTCDecoder(in_channels=384, out_channels=num_classes)
+
+        # Temperature scaling for confidence calibration
+        self.use_temp_scaling = use_temp_scaling
+        if self.use_temp_scaling:
+            self.temp_scaling = TemperatureScaling()
+
 
     def load_unirec_weights(self, weight_path: str):
         """Nạp trọng số UniRec/GTC checkpoint vào model.
@@ -165,6 +171,10 @@ class MultiFrameSVTRv2(nn.Module):
         # RCTCDecoder: CTC Head dự đoán xác suất ký tự
         # Output: [B, Seq_Len, Num_Classes]
         logits = self.head(fused_seq)
+
+        # Apply temperature scaling
+        if self.use_temp_scaling and hasattr(self, 'temp_scaling'):
+            logits = self.temp_scaling(logits)
 
         return logits.log_softmax(2)
 
