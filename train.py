@@ -507,6 +507,32 @@ def _run_training(args, config):
     # In số lượng bộ nhớ cần để chạy model
     print_model_memory_requirement(model, config.BATCH_SIZE, config.DEVICE)
 
+    # Load checkpoint để fine-tune (nếu tồn tại và không dùng --no-pretrained)
+    if not args.no_pretrained:
+        checkpoint_path = os.path.join(config.OUTPUT_DIR, f"{config.EXPERIMENT_NAME}_best.pth")
+        if os.path.exists(checkpoint_path):
+            print(f"\n🔄 FINE-TUNE MODE: Loading checkpoint...")
+            print(f"   Path: {checkpoint_path}")
+            try:
+                model.load_state_dict(torch.load(checkpoint_path, map_location=config.DEVICE))
+                print(f"   ✅ Loaded! Continuing from previous best model.")
+                
+                # Hiển thị scheduler info
+                scheduler_type = getattr(config, 'SCHEDULER_TYPE', 'onecycle')
+                if scheduler_type == 'cosine':
+                    print(f"   📊 Scheduler: Cosine (fine-tune mode)")
+                else:
+                    print(f"   ⚠️  Scheduler: OneCycle (will restart LR curve!)")
+                print()
+            except Exception as e:
+                print(f"   ❌ Failed to load: {e}")
+                print(f"   Will use pretrained weights only.\n")
+        else:
+            print(f"\nℹ️  No checkpoint found at: {checkpoint_path}")
+            print(f"   Starting from pretrained weights.\n")
+    else:
+        print(f"\n⚙️  --no-pretrained flag: Training from scratch\n")
+
     # Initialize trainer and start training
     trainer = Trainer(
         model=model,
