@@ -63,7 +63,20 @@ class Trainer:
             steps_per_epoch=len(train_loader),
             epochs=config.EPOCHS
         )
+
+        # Train tiếp từ epoch có sẵn best acc 
+        """
+        self.scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
+            self.optimizer,
+            T_0=10,  # Restart mỗi 10 epochs
+            T_mult=2,  # Tăng gấp đôi chu kỳ
+            eta_min=1e-6  # LR min
+        )
+        """
         self.scaler = GradScaler()
+
+        # Label smoothing
+        self.label_smoothing = getattr(config, 'LABEL_SMOOTHING', 0.1)
 
         # Tracking
         self.best_acc = 0.0
@@ -102,6 +115,14 @@ class Trainer:
 
             with autocast('cuda'):
                 preds = self.model(images)
+                
+                # Apply label smoothing BEFORE permute
+                if self.label_smoothing > 0 and self.training:
+                    num_classes = preds.size(-1)
+                    # Smooth logits: (1-α)·pred + α/K
+                    preds = preds * (1 - self.label_smoothing) + \
+                            self.label_smoothing / num_classes
+                
                 preds_permuted = preds.permute(1, 0, 2)
                 input_lengths = torch.full(
                     size=(images.size(0),),
@@ -110,6 +131,7 @@ class Trainer:
                 )
                 loss_per_sample = self.criterion(
                     preds_permuted, targets, input_lengths, target_lengths)
+
                 if self.use_focal_ctc:
                     # CTC có thể trả inf cho sample lỗi; clamp để tránh nan
                     loss_per_sample_safe = torch.clamp(
