@@ -14,7 +14,7 @@ class Config:
 
     # File config nếu train tiếp 
     SCHEDULER_TYPE: str = "cosine"
-    LEARNING_RATE: float = 0.0001  # Thấp hơn 0.00065
+    LEARNING_RATE: float = 3e-5  # Thấp hơn 0.00065
     EPOCHS: int = 50
     CTC_BEAM_WIDTH: int = 5
     LABEL_SMOOTHING: float = 0.1
@@ -29,11 +29,11 @@ class Config:
 
     # Training hyperparameters
     BATCH_SIZE: int = 64
-    LEARNING_RATE: float = 0.00065 # Giảm từ 0.00325 để tránh gradient explosion/NaN
+    LEARNING_RATE: float = 0.00003 # Giảm từ 0.00325 để tránh gradient explosion/NaN
     EPOCHS: int = 1
     SEED: int = 42
     NUM_WORKERS: int = 10
-    WEIGHT_DECAY: float = 0.05
+    WEIGHT_DECAY: float = 0.1
     GRAD_CLIP: float = 1.0  # Giảm từ 5.0 để ổn định gradient, tránh NaN
     SPLIT_RATIO: float = 0.9
     # 1 = greedy decode; 5–10 = beam search
@@ -41,7 +41,7 @@ class Config:
     # Same augmentation for all 5 frames 
     SAME_AUG_PER_SAMPLE: bool = True  
     # Dropout in STN/Fusion (0 = disabled)
-    DROPOUT: float = 0.1   
+    DROPOUT: float = 0.3   
     USE_CUDNN_BENCHMARK: bool = False
 
     USE_TEMP_SCALING: bool = False

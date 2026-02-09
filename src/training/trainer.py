@@ -117,7 +117,7 @@ class Trainer:
                 preds = self.model(images)
                 
                 # Apply label smoothing BEFORE permute
-                if self.label_smoothing > 0 and self.training:
+                if self.label_smoothing > 0 and self.model.training:
                     num_classes = preds.size(-1)
                     # Smooth logits: (1-α)·pred + α/K
                     preds = preds * (1 - self.label_smoothing) + \
