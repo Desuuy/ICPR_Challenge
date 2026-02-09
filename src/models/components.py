@@ -127,6 +127,15 @@ class CNNBackbone(nn.Module):
         return self.features(x)
 
 
+class TemperatureScaling(nn.Module):
+    """Temperature scaling for confidence calibration."""
+    def __init__(self):
+        super().__init__()
+        self.temperature = nn.Parameter(torch.ones(1) * 1.5)
+    
+    def forward(self, logits):
+        return logits / self.temperature
+
 class ResNetFeatureExtractor(nn.Module):
     """
     ResNet-based backbone customized for OCR.
