@@ -12,6 +12,14 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 class Config:
     """Training configuration with all hyperparameters."""
 
+    # File config nếu train tiếp 
+    SCHEDULER_TYPE: str = "cosine"
+    LEARNING_RATE: float = 0.0001  # Thấp hơn 0.00065
+    EPOCHS: int = 50
+    CTC_BEAM_WIDTH: int = 5
+    LABEL_SMOOTHING: float = 0.1
+
+
     # Focus on hard samples (sample-level weighting)
     USE_FOCAL_CTC: bool = False 
     # Enable Spatial Transformer Network (False to avoid NaN when STN chưa học)
@@ -29,13 +37,14 @@ class Config:
     GRAD_CLIP: float = 1.0  # Giảm từ 5.0 để ổn định gradient, tránh NaN
     SPLIT_RATIO: float = 0.9
     # 1 = greedy decode; 5–10 = beam search
-    CTC_BEAM_WIDTH: int = 1     
+    CTC_BEAM_WIDTH: int = 5 # thay từ 1 thành 5
     # Same augmentation for all 5 frames 
     SAME_AUG_PER_SAMPLE: bool = True  
     # Dropout in STN/Fusion (0 = disabled)
     DROPOUT: float = 0.1   
     USE_CUDNN_BENCHMARK: bool = False
-    
+
+    USE_TEMP_SCALING: bool = False
     # Experiment tracking
     MODEL_TYPE: str = "mf_svtrv2"  # "crnn" or "restran" or "mf_svtrv2"
     EXPERIMENT_NAME: str = MODEL_TYPE
