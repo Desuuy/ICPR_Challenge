@@ -499,7 +499,7 @@ def _run_training(args, config):
                            for p in model.parameters() if p.requires_grad)
     param_size_mb = total_params * 4 / (1024 ** 2)  # float32 = 4 bytes
 
-    print(f"\n   📊 Total params: {total_params:,} ({param_size_mb:.2f} MB)")
+    print(f"\n 📊 Total params: {total_params:,} ({param_size_mb:.2f} MB)")
     print(f"   📊 Trainable: {trainable_params:,}")
     print(f"   📊 Non-trainable: {total_params - trainable_params:,}")
     print("="*60 + "\n")
