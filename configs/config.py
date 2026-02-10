@@ -21,15 +21,15 @@ class Config:
 
 
     # Focus on hard samples (sample-level weighting)
-    USE_FOCAL_CTC: bool = False 
+    USE_FOCAL_CTC: bool = True  # Bật Focal Loss CTC
     # Enable Spatial Transformer Network (False to avoid NaN when STN chưa học)
-    USE_STN: bool = False  
+    USE_STN: bool = True  # Bật STN  
     # Super-Resolution (MF-LPR SR) - requires sr_model/ (LP-Diff or similar)
     USE_SR: bool = False
 
     # Training hyperparameters
     BATCH_SIZE: int = 64
-    LEARNING_RATE: float = 0.00003 # Giảm từ 0.00325 để tránh gradient explosion/NaN
+    LEARNING_RATE: float = 0.0003 # Giảm từ 0.00325 để tránh gradient explosion/NaN
     EPOCHS: int = 1
     SEED: int = 42
     NUM_WORKERS: int = 10
