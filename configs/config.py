@@ -21,9 +21,9 @@ class Config:
 
 
     # Focus on hard samples (sample-level weighting)
-    USE_FOCAL_CTC: bool = True  # Bật Focal Loss CTC
+    USE_FOCAL_CTC: bool = False  # Bật Focal Loss CTC
     # Enable Spatial Transformer Network (False to avoid NaN when STN chưa học)
-    USE_STN: bool = True  # Bật STN  
+    USE_STN: bool = False  # Bật STN  
     # Super-Resolution (MF-LPR SR) - requires sr_model/ (LP-Diff or similar)
     USE_SR: bool = False
 
