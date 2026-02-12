@@ -23,16 +23,7 @@ Giả định bạn đang ở thư mục gốc project `MultiFrame-LPR` và dùn
 **Lệnh gợi ý (15–20 epochs)**
 
 ```bash
-python train_optimized.py ^
-  -n phase1_warmup ^
-  -m mf_svtrv2 ^
-  --epochs 20 ^
-  --batch-size 32 ^
-  --learning-rate 0.00065 ^
-  --no-stn ^
-  --aug-level full ^
-  --no-pretrained ^
-  --no-checkpoint
+python train_optimized.py -n phase1_warmup -m mf_svtrv2 --epochs 20 --batch-size 32 --learning-rate 0.00065 --no-stn --aug-level full --no-pretrained --no-checkpoint
 ```
 
 Ghi chú:
@@ -63,12 +54,7 @@ Giả sử Phase 1 đã lưu checkpoint tốt nhất dưới tên `EXPERIMENT_NA
 Bạn đặt `EXPERIMENT_NAME = phase1_warmup` trong `config.py` hoặc dùng `-n` giống hệt để load lại.
 
 ```bash
-python train_optimized.py ^
-  -n phase2_stn_tuning ^
-  -m mf_svtrv2 ^
-  --epochs 15 ^
-  --batch-size 32 ^
-  --learning-rate 0.0001
+python train_optimized.py -n phase2_stn_tuning -m mf_svtrv2 --epochs 15 --batch-size 32 --learning-rate 0.0001
 ```
 
 Gợi ý chỉnh trong `configs/config.py` trước khi chạy:
@@ -96,16 +82,7 @@ Gợi ý chỉnh trong `configs/config.py` trước khi chạy:
 **Lệnh gợi ý (fine-tune tiếp)**
 
 ```bash
-python train_optimized.py ^
-  -n phase3_sr_integration ^
-  -m mf_svtrv2 ^
-  --epochs 20 ^
-  --batch-size 16 ^
-  --learning-rate 0.0001 ^
-  --use-sr ^
-  --sr-checkpoint-path "sr_model/checkpoints/LP-Diff_GEN.pth" ^
-  --sr-config-path "sr_model/config/LP-Diff.json" ^
-  --sr-n-timestep 100
+python train_optimized.py -n phase3_sr_integration -m mf_svtrv2 --epochs 20 --batch-size 16 --learning-rate 0.0001 --use-sr --sr-checkpoint-path "sr_model/checkpoints/LP-Diff_GEN.pth" --sr-config-path "sr_model/config/LP-Diff.json" --sr-n-timestep 100
 ```
 
 Ghi chú:
@@ -130,12 +107,7 @@ Ghi chú:
 **Lệnh gợi ý (fine-tune cuối)**
 
 ```bash
-python train_optimized.py ^
-  -n phase4_finetune ^
-  -m mf_svtrv2 ^
-  --epochs 10 ^
-  --batch-size 16 ^
-  --learning-rate 0.000005
+python train_optimized.py -n phase4_finetune -m mf_svtrv2 --epochs 10 --batch-size 16 --learning-rate 0.000005
 ```
 
 Sau Phase 4:
