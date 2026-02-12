@@ -52,11 +52,9 @@ class Trainer:
                 blank=0, zero_infinity=True, reduction='mean')
         self.criterion_val = nn.CTCLoss(
             blank=0, zero_infinity=True, reduction='mean')
-        self.optimizer = optim.AdamW(
-            model.parameters(),
-            lr=config.LEARNING_RATE,
-            weight_decay=config.WEIGHT_DECAY
-        )
+
+        # Optimizer với 3 nhóm tham số: STN / Backbone / Fusion+Head+Country
+        self.optimizer = self._build_optimizer(model, config)
         self.scheduler = optim.lr_scheduler.OneCycleLR(
             self.optimizer,
             max_lr=config.LEARNING_RATE,
@@ -82,6 +80,50 @@ class Trainer:
         self.best_acc = 0.0
         self.current_epoch = 0
         self.history: List[Dict] = []  # Lưu lịch sử metrics mỗi epoch
+
+    def _build_optimizer(self, model: nn.Module, config):
+        """
+        Khởi tạo AdamW với 3 nhóm tham số:
+          - STN: học nhanh hơn (align tốt hơn)
+          - Backbone: LR thấp (giữ ổn định pretrained)
+          - Head + Fusion + Country embedding: LR cao hơn (học nhanh)
+        """
+        stn_params: List[nn.Parameter] = []
+        backbone_params: List[nn.Parameter] = []
+        head_params: List[nn.Parameter] = []
+
+        for name, param in model.named_parameters():
+            if not param.requires_grad:
+                continue
+            if 'stn' in name:
+                stn_params.append(param)
+            elif 'backbone' in name:
+                backbone_params.append(param)
+            else:
+                # fusion, country_emb, head, temp_scaling, ...
+                head_params.append(param)
+
+        base_lr = self.config.LEARNING_RATE
+        # Có thể override bằng config nếu muốn tinh chỉnh
+        lr_mult_stn = getattr(self.config, 'LR_MULT_STN', 1.0)
+        lr_mult_backbone = getattr(self.config, 'LR_MULT_BACKBONE', 0.1)
+        lr_mult_head = getattr(self.config, 'LR_MULT_HEAD', 1.0)
+
+        param_groups = []
+        if stn_params:
+            param_groups.append(
+                {"params": stn_params, "lr": base_lr * lr_mult_stn})
+        if backbone_params:
+            param_groups.append(
+                {"params": backbone_params, "lr": base_lr * lr_mult_backbone})
+        if head_params:
+            param_groups.append(
+                {"params": head_params, "lr": base_lr * lr_mult_head})
+
+        return optim.AdamW(
+            param_groups,
+            weight_decay=config.WEIGHT_DECAY,
+        )
 
     def _get_output_path(self, filename: str) -> str:
         """Get full path for output file in configured directory."""
