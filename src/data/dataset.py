@@ -173,7 +173,7 @@ class MultiFrameDataset(Dataset):
         return train_tracks, val_tracks
 
     def _index_samples(self, tracks: List[str]) -> None:
-        """Index all samples from selected tracks."""
+        """Index all samples from selected tracks with LR/HQ pairs and country info."""
         for track_path in tqdm(tracks, desc=f"Indexing {self.mode}"):
             json_path = os.path.join(track_path, "annotations.json")
             if not os.path.exists(json_path):
@@ -183,10 +183,21 @@ class MultiFrameDataset(Dataset):
                     data = json.load(f)
                 if isinstance(data, list):
                     data = data[0]
-                label = data.get('plate_text', data.get(
-                    'license_plate', data.get('text', '')))
+
+                # Label
+                label = data.get(
+                    'plate_text',
+                    data.get('license_plate', data.get('text', ''))
+                )
                 if not label:
                     continue
+
+                # Country: ưu tiên field 'country', fallback theo Scenario-A/B trong path
+                country_name = data.get(
+                    'country',
+                    'Scenario-B' if 'Scenario-B' in track_path else 'Scenario-A'
+                )
+                country_id = 1 if 'Scenario-B' in country_name else 0
 
                 track_id = os.path.basename(track_path)
 
@@ -199,20 +210,13 @@ class MultiFrameDataset(Dataset):
                     glob.glob(os.path.join(track_path, "hr-*.jpg"))
                 )
 
-                # Real LR samples
-                self.samples.append({
-                    'paths': lr_files,
-                    'label': label,
-                    'is_synthetic': False,
-                    'track_id': track_id
-                })
-
-                # Synthetic LR samples (only in training mode)
-                if self.mode == 'train':
+                # Chỉ nhận sample nếu đủ 5 LR và 5 HR
+                if len(lr_files) == 5 and len(hr_files) == 5:
                     self.samples.append({
-                        'paths': hr_files,
+                        'lr_paths': lr_files,
+                        'hr_paths': hr_files,
                         'label': label,
-                        'is_synthetic': True,
+                        'country_id': country_id,
                         'track_id': track_id
                     })
             except Exception:
