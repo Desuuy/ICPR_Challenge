@@ -20,19 +20,12 @@ from .openrec.modeling.decoders.rctc_decoder import RCTCDecoder
 
 
 class MultiFrameSVTRv2(nn.Module):
-    def __init__(self, num_classes, use_stn=True, dropout=0.0, use_temp_scaling=True):
+    def __init__(self, num_classes, use_stn=True, dropout=0.1, use_temp_scaling=True):
         super().__init__()
         self.use_stn = use_stn
         # 1. STN để nắn thẳng biển số trước khi vào backbone
         self.stn = STNBlock(in_channels=3, dropout=dropout)
 
-        # 2. SVTRv2 Encoder (SVTRv2LNConvTwo33)
-        # Cấu hình này được lấy TRỰC TIẾP từ weights/config.yml:
-        #   dims:      [128, 256, 384]
-        #   depths:    [6, 6, 6]
-        #   num_heads: [4, 8, 12]
-        #   mixer:     giống hệt trong config.yml
-        #   local_k, sub_k, feat2d: khớp config.yml
         self.backbone = SVTRv2LNConvTwo33(
             max_sz=[32, 128],
             dims=[128, 256, 384],
@@ -48,11 +41,20 @@ class MultiFrameSVTRv2(nn.Module):
             feat2d=True,
         )
 
-        # 3. Fusion nhận 384 channels từ stage cuối của Encoder
-        # (dims[-1] = 384 trong config.yml)
-        self.fusion = AttentionFusion(channels=384, dropout=dropout)
+        # Thêm Country Embedding
+        self.country_emb = nn.Embedding(2, 64) # 2 quốc gia, vector 64 chiều
 
-        # 4. Head (RCTCDecoder) cũng nhận 384 channels
+        # 3. Fusion nhận 384 channels từ stage cuối của Encoder
+        # (dims[-1] = 384 trong config.yml) + tăng dropout để tránh overfit HQ
+        self.fusion = AttentionFusion(channels=384, dropout=0.3)
+
+        # 4. Context Projection: nối đặc trưng ảnh (384) + quốc gia (64)
+        self.decoder_proj = nn.Sequential(
+            nn.Linear(384 + 64, 384),
+            nn.ReLU(),
+            nn.Dropout(dropout)
+        )
+        # 5. Head (RCTCDecoder) cũng nhận 384 channels
         self.head = RCTCDecoder(in_channels=384, out_channels=num_classes)
 
         # Temperature scaling for confidence calibration
@@ -133,12 +135,13 @@ class MultiFrameSVTRv2(nn.Module):
     def save_weights(self, weight_path):
         torch.save(self.state_dict(), weight_path)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, country_ids: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass với SVTRv2 + STN.
+        Forward pass với SVTRv2 + STN + country embedding.
 
         Args:
-            x: [Batch, Frames(5), 3, H, W]
+            x: [Batch, Frames, 3, H, W]
+            country_ids: [Batch] (mỗi phần tử là ID quốc gia)
         Returns:
             logits: [Batch, Seq_Len, Num_Classes] (log_softmax)
         """
@@ -159,18 +162,27 @@ class MultiFrameSVTRv2(nn.Module):
         # Output: [B*F, C, H', W'] với C=384 (dims[-1])
         features = self.backbone(x_aligned)
 
-        # --- Giai đoạn 3: Multi-frame Fusion ---
-        # AttentionFusion: Gộp thông tin từ 5 frames
-        # Output: [B, C, H', W']
+        # --- Giai đoạn 3: Multi-frame Fusion (5 LQ + 5 HQ) ---
+        # AttentionFusion nhận all-frames và trả về 1 feature map / sample
+        # Input: [B*F, C, H', W'], Output: [B, C, H', W']
         fused = self.fusion(features)
 
-        # --- Giai đoạn 4: Sequence Preparation & Head ---
-        # Ép Height về 1 để tạo chuỗi ký tự theo chiều ngang
-        fused_seq = F.adaptive_avg_pool2d(fused, (1, fused.size(-1)))
+        # --- Giai đoạn 4: Nhúng và kết hợp thông tin quốc gia ---
+        # Chuyển H' về 1 để tạo chuỗi theo chiều ngang
+        b_f, c_f, h_f, w_f = fused.size()
+        fused_seq = F.adaptive_avg_pool2d(fused, (1, w_f)).squeeze(2)  # [B, C, W']
+        fused_seq = fused_seq.permute(0, 2, 1)  # [B, W', C]
 
-        # RCTCDecoder: CTC Head dự đoán xác suất ký tự
-        # Output: [B, Seq_Len, Num_Classes]
-        logits = self.head(fused_seq)
+        # country_emb: [B, 64] -> broadcast theo chiều time (W')
+        c_vec = self.country_emb(country_ids)  # [B, 64]
+        c_vec = c_vec.unsqueeze(1).expand(-1, w_f, -1)  # [B, W', 64]
+
+        # Kết hợp đặc trưng hình ảnh và embedding quốc gia
+        combined = torch.cat([fused_seq, c_vec], dim=-1)  # [B, W', 384+64]
+        combined = self.decoder_proj(combined)  # [B, W', 384]
+
+        # RCTCDecoder mong đợi input có chiều Height = 1
+        logits = self.head(combined.permute(0, 2, 1).unsqueeze(2))
 
         # Apply temperature scaling
         if self.use_temp_scaling and hasattr(self, 'temp_scaling'):
