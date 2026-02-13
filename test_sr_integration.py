@@ -143,9 +143,9 @@ def test_dataset_with_sr(sr_enhancer, data_root: str = None):
             print("⚠️  WARNING: Dataset rỗng, không thể test")
             return True
 
-        # Test load 1 sample
+        # Test load 1 sample (MultiFrameDataset trả về 7 trường, lấy 6 trường đầu)
         sample = dataset[0]
-        images, targets, target_len, label, track_id, img_paths = sample
+        images, targets, target_len, label, track_id, img_paths, _ = sample
 
         print(f"   Dataset size: {len(dataset)} samples")
         print(f"   Sample 0 - Images shape: {images.shape}")
@@ -207,9 +207,9 @@ def test_pipeline_integration(sr_enhancer, data_root: str = None):
             num_workers=0,  # Dùng 0 để tránh multiprocessing issues khi test
         )
 
-        # Load 1 batch
+        # Load 1 batch (7 trường, bỏ qua country_ids vì chỉ kiểm tra shape ảnh)
         batch = next(iter(loader))
-        images, targets, target_lengths, labels_text, track_ids, img_paths = batch
+        images, targets, target_lengths, labels_text, track_ids, img_paths, _ = batch
 
         print(f"   Batch images shape: {images.shape}")  # (B, T=5, C, H, W)
         print(f"   Batch size: {images.shape[0]}")
