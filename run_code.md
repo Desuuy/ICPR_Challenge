@@ -12,23 +12,26 @@ Giả định bạn đang ở thư mục gốc project `MultiFrame-LPR` và dùn
 - Không bật STN, không dùng SR, dùng CTC thường để hội tụ nhanh.  
 - Hạn chế làm hỏng backbone pretrained.
 
-**Cấu hình chính**  
+**Cấu hình chính (GPU 4GB, có gradient accumulation)**  
 - `USE_STN = False` (dùng flag `--no-stn` để ép tắt).  
 - `USE_SR = False` (không dùng `--use-sr`).  
 - `USE_FOCAL_CTC = False` (giữ mặc định CTC thường trong `config.py`).  
-- `BATCH_SIZE = 32` (override bằng flag).  
-- `LEARNING_RATE ≈ 6.5e-4` (OneCycleLR đã được thiết lập trong `Trainer`).  
+- `BATCH_SIZE PHYSICAL = 4` (do hạn chế VRAM).  
+- `ACCUM_STEPS = 8` (trong `config.py` → Effective Batch = 4 × 8 = 32).  
+- `LEARNING_RATE ≈ 1e-4` khi fine-tune từ pretrained; khi warm-up từ random có thể cao hơn, nhưng với GPU 4GB nên ưu tiên LR thấp để tránh NaN.  
 - Optimizer: `AdamW` với 3 nhóm tham số (STN / Backbone / Head+Fusion+Country) như đã tích hợp trong `trainer.py`.
 
-**Lệnh gợi ý (15–20 epochs)**
+**Lệnh gợi ý (Phase 1 – Recovery từ pretrained, 15–20 epochs)**
 
 ```bash
-python train_optimized.py -n phase1_warmup -m mf_svtrv2 --epochs 20 --batch-size 32 --learning-rate 0.00065 --no-stn --aug-level full --no-pretrained --no-checkpoint
+python train_optimized.py -n phase1_recovery -m mf_svtrv2 --epochs 20 --batch-size 4 --learning-rate 0.0001 --no-stn --aug-level light
 ```
 
 Ghi chú:
-- Nếu bạn muốn tận dụng pretrained UniRec, bỏ `--no-pretrained` (nhưng vẫn nên giữ LR schedule như trên).
-- Sau Phase 1, kiểm tra log trong `results/` (acc ~60–75% đã là ổn cho warm-up).
+- **Không dùng `--no-pretrained`** để tận dụng `weights/best.pth` đã cấu hình trong `config.py` (backbone ổn định hơn rất nhiều).  
+- `ACCUM_STEPS` đã được set trong `configs/config.py`, Trainer sẽ tự apply gradient accumulation.  
+- 5 epoch đầu có thể giữ `--aug-level light` để model “nhìn rõ” ký tự HQ, sau đó nếu ổn định có thể nâng lên `full`.  
+- Sau Phase 1, kiểm tra log trong `results/` (loss không NaN, acc bắt đầu >0%, CER giảm dần là tín hiệu tốt).
 
 ---
 
