@@ -40,7 +40,9 @@ def main():
         return 1
 
     loader = DataLoader(val_ds, batch_size=4, shuffle=False, collate_fn=MultiFrameDataset.collate_fn)
-    images, targets, target_lengths, labels_text, track_ids, _ = next(iter(loader))
+    # Batch từ MultiFrameDataset.collate_fn:
+    # images, targets, target_lengths, labels_text, track_ids, img_paths, country_ids
+    images, targets, target_lengths, labels_text, track_ids, _, country_ids = next(iter(loader))
 
     model = MultiFrameSVTRv2(num_classes=config.NUM_CLASSES, use_stn=config.USE_STN).to(config.DEVICE)
 
@@ -53,7 +55,7 @@ def main():
 
     model.eval()
     with torch.no_grad():
-        preds = model(images.to(config.DEVICE))
+        preds = model(images.to(config.DEVICE), country_ids.to(config.DEVICE))
 
     # Check preds
     print("\n1. Model output shape:", preds.shape)
