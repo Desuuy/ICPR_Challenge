@@ -232,6 +232,8 @@ def main():
 
 
 def _run_training(args, config):
+    # Submission mode: bật bằng --submission-mode (CLI) hoặc config.SUBMISSION_MODE = True
+    submission_mode = args.submission_mode or getattr(config, "SUBMISSION_MODE", False)
 
     # Làm trống cache CUDA và in bộ nhớ GPU
     if config.DEVICE.type == "cuda":
@@ -258,8 +260,8 @@ def _run_training(args, config):
     
     use_focal = getattr(config, 'USE_FOCAL_CTC', False)
     print(f"   USE_FOCAL_CTC: {use_focal}  ->  LOSS: {'Focal CTC' if use_focal else 'CTC'}")
-    print(f"   SUBMISSION_MODE: {args.submission_mode}")
-    if args.submission_mode:
+    print(f"   SUBMISSION_MODE: {submission_mode} (CLI={args.submission_mode}, config={getattr(config, 'SUBMISSION_MODE', False)})")
+    if submission_mode:
         print(f"   TEST_DATA_ROOT: {config.TEST_DATA_ROOT}")
 
     # Validate data path
@@ -322,7 +324,7 @@ def _run_training(args, config):
         print(f"⚠️  USE_SR=True -> num_workers=0 (tránh lỗi CUDA fork)\n")
 
     # Create datasets based on mode
-    if args.submission_mode:
+    if submission_mode:
         print("\n📌 SUBMISSION MODE ENABLED")
         print("   - Training on FULL dataset (no validation split)")
         print("   - Will generate predictions for test data after training\n")
@@ -597,7 +599,7 @@ def _run_training(args, config):
     trainer.fit()
 
     # Run test inference in submission mode
-    if args.submission_mode and test_loader is not None:
+    if submission_mode and test_loader is not None:
         print("\n" + "="*60)
         print("📝 GENERATING SUBMISSION FILE")
         print("="*60)
