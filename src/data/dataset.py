@@ -121,6 +121,7 @@ class MultiFrameDataset(Dataset):
         # Initialize MSR transform (dynamic-width)
         self.use_msr = use_msr
         if self.use_msr:
+            print(">>> USING LicensePlateResize FROM msr_resize.py")
             self.msr_transform = LicensePlateResize(
                 img_height=self.img_height,
                 img_width_min=self.msr_width_min,

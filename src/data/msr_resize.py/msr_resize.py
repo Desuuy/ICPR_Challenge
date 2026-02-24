@@ -28,10 +28,13 @@ class LicensePlateResize:
         padding=True,
         **kwargs
     ):
+        print(">>> USING LicensePlateResize FROM msr_resize.py")
+
         self.img_height = img_height
         self.img_width_min = img_width_min
         self.img_width_max = img_width_max
         self.padding = padding
+        
         
         print(f"📐 [MSR] Init: H={img_height}, W=[{img_width_min}, {img_width_max}], padding={padding}")
         
