@@ -67,3 +67,43 @@ def get_val_transforms(img_height: int = 32, img_width: int = 128) -> A.Compose:
         A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
         ToTensorV2()
     ])
+
+
+def get_msr_svtv2_transforms() -> A.Compose:
+    """
+    Augmentation pipeline for MSR-style training with SVTRv2.
+
+    Lưu ý:
+    - KHÔNG resize về kích thước cố định ở đây.
+    - Resize + padding đa tỉ lệ (MSR) sẽ được thực hiện thủ công trong Dataset
+      trước khi apply Albumentations.
+    - Pipeline này chỉ thực hiện các biến đổi hình học/màu + normalize + ToTensor.
+    """
+    return A.Compose([
+        # Các augment giống get_train_transforms nhưng bỏ A.Resize.
+        A.Affine(
+            scale=(0.95, 1.05),
+            translate_percent=(0.05, 0.05),
+            rotate=(-5, 5),
+            fill=128,
+            p=0.5
+        ),
+        A.Perspective(scale=(0.02, 0.05), p=0.3),
+        A.RandomBrightnessContrast(p=0.5),
+        A.HueSaturationValue(
+            hue_shift_limit=10,
+            sat_shift_limit=20,
+            val_shift_limit=20,
+            p=0.3
+        ),
+        A.Rotate(limit=10, p=0.3),
+        A.ChannelShuffle(p=0.3),
+        A.CoarseDropout(
+            num_holes_range=(2, 5),
+            hole_height_range=(4, 8),
+            hole_width_range=(4, 8),
+            p=0.3
+        ),
+        A.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
+        ToTensorV2(),
+    ])
