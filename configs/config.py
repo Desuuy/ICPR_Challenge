@@ -19,6 +19,8 @@ class Config:
     CTC_BEAM_WIDTH: int = 5
     # Label smoothing cho CTC: tạm thời đặt 0.0 để tránh làm sai phân phối log-prob của CTC
     LABEL_SMOOTHING: float = 0.0
+    # Bật chế độ submission: train full data + tạo file submission cho test (có thể bật bằng config hoặc --submission-mode)
+    SUBMISSION_MODE: bool = False
 
     IMG_HEIGHT: int = 32
     IMG_WIDTH: int = 128
