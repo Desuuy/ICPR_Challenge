@@ -255,7 +255,7 @@ class RecTVResizeRatio(object):
                                      1] if ratio_resize <= 4 else [
                                          self.base_h *
                                          ratio_resize, self.base_h
-                                     ]
+        ]
         if not self.padding:
             resized_w = imgW
         else:
@@ -448,12 +448,13 @@ def resize_norm_img_long(
         ratio = w / float(h)
         gen_ratio = round(ratio) if ratio > 0.5 else 1
     gen_ratio = min(data['gen_ratio'], max_ratio)
+    # gen_ratio = min(gen_ratio, max_ratio)
     if padding_rand and random.random() < 0.5:
         padding = False if padding else True
     imgW, imgH = base_shape[gen_ratio -
                             1] if gen_ratio <= len(base_shape) else [
                                 base_h * gen_ratio, base_h
-                            ]
+    ]
     if not padding:
         resized_image = cv2.resize(img, (imgW, imgH),
                                    interpolation=cv2.INTER_LINEAR)
