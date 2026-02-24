@@ -13,34 +13,45 @@ class Config:
     """Training configuration with all hyperparameters."""
 
     # File config nếu train tiếp 
-    SCHEDULER_TYPE: str = "cosine"
+    SCHEDULER_TYPE: str = "cosine" # "onecycle" or "cosine"
     LEARNING_RATE: float = 3e-5  
-    EPOCHS: int = 50
+    EPOCHS: int = 1
     CTC_BEAM_WIDTH: int = 5
     # Label smoothing cho CTC: tạm thời đặt 0.0 để tránh làm sai phân phối log-prob của CTC
     LABEL_SMOOTHING: float = 0.0
 
+    IMG_HEIGHT: int = 32
+    IMG_WIDTH: int = 128
+
+    # Multi-Scale Resize (MSR)
+    USE_MSR: bool = True  # Bật MSR
+    MSR_WIDTH_MIN: int = 64
+    # MAX width cho MSR phải khớp backbone SVTRv2 (max_sz=[32, 128])
+    # Nếu muốn >128 cần sửa cả mf_svtrv2.py (max_sz) và pos_embed trong SVTRv2LNConvTwo33.
+    MSR_WIDTH_MAX: int = 128
 
     # Focus on hard samples (sample-level weighting)
-    USE_FOCAL_CTC: bool = False  # Bật Focal Loss CTC
+    # Bật Focal Loss CTC
+    USE_FOCAL_CTC: bool = False  
     # Enable Spatial Transformer Network (False to avoid NaN when STN chưa học)
-    USE_STN: bool = False  # Bật STN  
+    # Bật STN 
+    USE_STN: bool = False   
     # Super-Resolution (MF-LPR SR) - requires sr_model/ (LP-Diff or similar)
     USE_SR: bool = False
 
     # Training hyperparameters
-    BATCH_SIZE: int = 64
+    BATCH_SIZE: int = 32
     LEARNING_RATE: float = 0.0003 # Giảm từ 0.00325 để tránh gradient explosion/NaN
     EPOCHS: int = 1
     SEED: int = 42
     NUM_WORKERS: int = 10
     WEIGHT_DECAY: float = 0.1
-    GRAD_CLIP: float = 1.0  # Giảm từ 5.0 để ổn định gradient, tránh NaN
+    GRAD_CLIP: float = 1.0  
     # Gradient accumulation steps (Effective Batch = BATCH_SIZE * ACCUM_STEPS)
     ACCUM_STEPS: int = 8
     SPLIT_RATIO: float = 0.9
     # 1 = greedy decode; 5–10 = beam search
-    CTC_BEAM_WIDTH: int = 5 # thay từ 1 thành 5
+    CTC_BEAM_WIDTH: int = 5
     # Same augmentation for all 5 frames 
     SAME_AUG_PER_SAMPLE: bool = True  
     # Dropout in STN/Fusion (0 = disabled)
@@ -49,11 +60,12 @@ class Config:
 
     USE_TEMP_SCALING: bool = False
     # Experiment tracking
-    MODEL_TYPE: str = "mf_svtrv2"  # "crnn" or "restran" or "mf_svtrv2"
+    # "crnn" or "restran" or "mf_svtrv2"
+    MODEL_TYPE: str = "mf_svtrv2" 
     EXPERIMENT_NAME: str = MODEL_TYPE
     AUGMENTATION_LEVEL: str = "light"  # "full" or "light"
     
-    # Data paths (tương đối project root, không phụ thuộc cwd)
+    # Data paths 
     DATA_ROOT: str = field(default_factory=lambda: os.path.join(
         _PROJECT_ROOT, "Data", "train"))
     TEST_DATA_ROOT: str = field(default_factory=lambda: os.path.join(
@@ -62,8 +74,7 @@ class Config:
         _PROJECT_ROOT, "Data", "val_tracks.json"))
     SUBMISSION_FILE: str = "submission.txt"
 
-    IMG_HEIGHT: int = 32
-    IMG_WIDTH: int = 128  # Backbone hardcode max_sz=[32,128]; tăng cần sửa mf_svtrv2.py
+  
 
     # Character set
     CHARS: str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
