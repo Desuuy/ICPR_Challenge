@@ -10,13 +10,36 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
+from src.data.msr_resize2 import MultiFrameLicensePlateResize, LicensePlateResize
 
 from src.data.transforms import (
     get_train_transforms,
     get_val_transforms,
     get_degradation_transforms,
     get_light_transforms,
+    get_msr_svtv2_transforms,
 )
+
+from src.openrec.preprocess.resize import resize_norm_img_long
+# MSR (Multi-Size Resizing) chuẩn SVTRv2 từ openrec: base_shape [W, H].
+# Dùng H=32 để khớp backbone max_sz=[32, 128]; width 64,96,112,128.
+MSR_BASE_SHAPE_H32: List[List[int]] = [
+    [64, 32],
+    [96, 32],
+    [112, 32],
+    [128, 32],
+]
+
+
+def _msr_from_openrec_to_albumentations(data: Dict[str, Any]) -> np.ndarray:
+    """
+    Chuyển ảnh sau resize_norm_img_long (CHW, float [-1,1]) sang HWC uint8 [0,255]
+    để đưa vào pipeline Albumentations.
+    """
+    x = data["image"]  # (3, H, W), giá trị [-1, 1]
+    x = (x + 1.0) * 0.5 * 255.0
+    x = np.clip(x, 0, 255).astype(np.uint8)
+    return x.transpose(1, 2, 0)  # HWC
 
 
 class MultiFrameDataset(Dataset):
@@ -41,6 +64,9 @@ class MultiFrameDataset(Dataset):
         full_train: bool = False,
         same_aug_per_sample: bool = True,
         sr_enhancer: Any = None,
+        use_msr: bool = False,  # ← THÊM
+        msr_width_min: int = 64,  # ← THÊM
+        msr_width_max: int = 256,  # ← THÊM
     ):
         """
         Args:
@@ -70,11 +96,20 @@ class MultiFrameDataset(Dataset):
         self.same_aug_per_sample = same_aug_per_sample
         # Optional super-resolution enhancer (MF_LPR_SR hoặc tương tự)
         self.sr_enhancer = sr_enhancer
+        self.use_msr = use_msr 
+        self.msr_width_min = msr_width_min 
+        self.msr_width_max = msr_width_max 
+        # MSR (Multi-Size Resizing) theo SVTRv2 cho training
+        self.use_msr_svtv2 = mode == 'train' and augmentation_level == "msr_svtv2"
 
         if mode == 'train':
             # Training: apply augmentation on the fly
             if augmentation_level == "light":
-                self.transform = get_light_transforms(img_height, img_width)
+                self.transform = get_light_transforms(img_height, img_width)       
+            #elif augmentation_level == "msr_svtv2":
+                # MSR: resize + padding đa tỉ lệ sẽ làm thủ công trong __getitem__
+                # Transform chỉ còn augment + normalize + ToTensor.
+            #    self.transform = get_msr_svtv2_transforms()
             else:
                 self.transform = get_train_transforms(img_height, img_width)
             self.degrade = get_degradation_transforms()
@@ -82,6 +117,20 @@ class MultiFrameDataset(Dataset):
             # Validation or test: only resize and normalize
             self.transform = get_val_transforms(img_height, img_width)
             self.degrade = None
+
+        # Initialize MSR transform (dynamic-width)
+        self.use_msr = use_msr
+        if self.use_msr:
+            self.msr_transform = LicensePlateResize(
+                img_height=self.img_height,
+                img_width_min=self.msr_width_min,
+                img_width_max=self.msr_width_max,
+                padding=True
+            )
+            print(f"📐 MSR enabled: width range [{self.msr_width_min}, {self.msr_width_max}]")
+        else:
+            self.msr_transform = None
+        
 
         print(f"[{mode.upper()}] Scanning: {root_dir}")
         abs_root = os.path.abspath(root_dir)
@@ -212,12 +261,18 @@ class MultiFrameDataset(Dataset):
 
                 # Chỉ nhận sample nếu đủ 5 LR và 5 HR
                 if len(lr_files) == 5 and len(hr_files) == 5:
+                    # Chuẩn hoá cấu trúc sample để __getitem__ dùng chung với test:
+                    # - 'paths': danh sách đường dẫn ảnh đầu vào (ở đây là LR thật)
+                    # - 'is_synthetic': đánh dấu có phải LR giả lập từ HR hay không
+                    # Giữ lại 'lr_paths' và 'hr_paths' để sau này có thể dùng cho SR / debug nếu cần.
                     self.samples.append({
+                        'paths': lr_files,          # dùng trong __getitem__
+                        'is_synthetic': False,      # LR thật, không phải degrade từ HR
                         'lr_paths': lr_files,
                         'hr_paths': hr_files,
                         'label': label,
                         'country_id': country_id,
-                        'track_id': track_id
+                        'track_id': track_id,
                     })
             except Exception:
                 pass
@@ -226,6 +281,9 @@ class MultiFrameDataset(Dataset):
         """Index test samples without labels."""
         for track_path in tqdm(tracks, desc="Indexing test"):
             track_id = os.path.basename(track_path)
+            # Country: dựa vào tên folder Scenario-A/B (giống train/val)
+            country_name = 'Scenario-B' if 'Scenario-B' in track_path else 'Scenario-A'
+            country_id = 1 if 'Scenario-B' in country_name else 0
 
             # Load all LR images (sorted by frame number)
             lr_files = sorted(
@@ -238,13 +296,14 @@ class MultiFrameDataset(Dataset):
                     'paths': lr_files,
                     'label': '',  # No label for test data
                     'is_synthetic': False,
+                    'country_id': country_id,
                     'track_id': track_id
                 })
 
     def __len__(self) -> int:
         return len(self.samples)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, int, str, str, List[str]]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, int, str, str, List[str], int]:
         """Load exactly 5 frames (guaranteed by dataset structure).
 
         For training: applies degradation (if synthetic) then augmentation.
@@ -256,6 +315,8 @@ class MultiFrameDataset(Dataset):
         label = item['label']
         is_synthetic = item['is_synthetic']
         track_id = item['track_id']
+        # Country id (0/1) cho country embedding; fallback 0 nếu thiếu
+        country_id = item.get('country_id', 0)
 
         images_list = []
         # Same augmentation for all 5 frames: fix RNG seed per sample so transform params match
@@ -266,16 +327,23 @@ class MultiFrameDataset(Dataset):
             image = cv2.imread(p, cv2.IMREAD_COLOR)
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
-            # Apply degradation first (if synthetic), before any transform
+            # Apply degradation trước (nếu synthetic)
             if is_synthetic and self.degrade:
                 image = self.degrade(image=image)['image']
 
-            # Apply transform (augmented for training, clean for validation/test)
-            if sample_seed is not None:
-                random.seed(sample_seed)
-                np.random.seed(sample_seed)
-            image = self.transform(image=image)['image']
-            images_list.append(image)
+            # Áp dụng MSR (dynamic-width) hoặc transform thường CHO TỪNG FRAME
+            if self.msr_transform is not None:
+                data = {'image': image}
+                data = self.msr_transform(data)
+                image_tensor = torch.from_numpy(data['image'])
+            else:
+                if sample_seed is not None:
+                    random.seed(sample_seed)
+                    np.random.seed(sample_seed)
+                image_tensor = self.transform(image=image)['image']
+
+            images_list.append(image_tensor)
+
 
         images_tensor = torch.stack(images_list, dim=0)
 
@@ -297,7 +365,15 @@ class MultiFrameDataset(Dataset):
                 target = [0]
             target_len = len(target)
 
-        return images_tensor, torch.tensor(target, dtype=torch.long), target_len, label, track_id, img_paths
+        return (
+            images_tensor,
+            torch.tensor(target, dtype=torch.long),
+            target_len,
+            label,
+            track_id,
+            img_paths,
+            country_id,
+        )
 
     @staticmethod
     def collate_fn(batch: List[Tuple]) -> Tuple[
@@ -307,10 +383,12 @@ class MultiFrameDataset(Dataset):
         Tuple[str, ...],
         Tuple[str, ...],
         Tuple[tuple, ...],
+        torch.Tensor,
     ]:
         """Custom collate function for DataLoader."""
-        images, targets, target_lengths, labels_text, track_ids, img_paths = zip(*batch)
+        images, targets, target_lengths, labels_text, track_ids, img_paths, country_ids = zip(*batch)
         images = torch.stack(images, 0)
         targets = torch.cat(targets)
         target_lengths = torch.tensor(target_lengths, dtype=torch.long)
-        return images, targets, target_lengths, labels_text, track_ids, img_paths
+        country_ids = torch.tensor(country_ids, dtype=torch.long)
+        return images, targets, target_lengths, labels_text, track_ids, img_paths, country_ids
