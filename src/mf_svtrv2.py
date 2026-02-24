@@ -1,6 +1,3 @@
-
-
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,15 +9,13 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-
-
 from src.models.components import STNBlock, AttentionFusion, TemperatureScaling
 from .openrec.modeling.encoders.svtrv2_lnconv_two33 import SVTRv2LNConvTwo33
 from .openrec.modeling.decoders.rctc_decoder import RCTCDecoder
 
-
+# Multi-Frame SVTRv2 model
 class MultiFrameSVTRv2(nn.Module):
-    def __init__(self, num_classes, use_stn=True, dropout=0.1, use_temp_scaling=True):
+    def __init__(self, num_classes, use_stn=True, dropout=0.1, use_temp_scaling=False):
         super().__init__()
         self.use_stn = use_stn
         # 1. STN để nắn thẳng biển số trước khi vào backbone
@@ -46,7 +41,7 @@ class MultiFrameSVTRv2(nn.Module):
 
         # 3. Fusion nhận 384 channels từ stage cuối của Encoder
         # (dims[-1] = 384 trong config.yml) + tăng dropout để tránh overfit HQ
-        self.fusion = AttentionFusion(channels=384, dropout=0.3)
+        self.fusion = AttentionFusion(channels=384, dropout=0.1)
 
         # 4. Context Projection: nối đặc trưng ảnh (384) + quốc gia (64)
         self.decoder_proj = nn.Sequential(
@@ -181,14 +176,29 @@ class MultiFrameSVTRv2(nn.Module):
         combined = torch.cat([fused_seq, c_vec], dim=-1)  # [B, W', 384+64]
         combined = self.decoder_proj(combined)  # [B, W', 384]
 
-        # RCTCDecoder mong đợi input có chiều Height = 1
-        logits = self.head(combined.permute(0, 2, 1).unsqueeze(2))
+
+        # --- Giai đoạn 5: CTC Decoder ---
+        # RCTCDecoder input: [B, C, H=1, W']
+        decoder_input = combined.permute(0, 2, 1).unsqueeze(2)  # [B, 384, 1, W']
+        logits = self.head(decoder_input)  # Output: [B, Classes, W'] hoặc [B, Classes, 1, W']
+
+        # Chuẩn hóa về [B, W', Classes]
+        if logits.dim() == 4:  # [B, Classes, 1, W']
+            logits = logits.squeeze(2)  # [B, Classes, W']
+            
+        if logits.dim() == 3 and logits.size(1) == 37:  # [B, Classes, W']
+            logits = logits.permute(0, 2, 1)  # [B, W', Classes]
 
         # Apply temperature scaling
         if self.use_temp_scaling and hasattr(self, 'temp_scaling'):
             logits = self.temp_scaling(logits)
 
-        return logits.log_softmax(2)
+        # Sau dòng: logits = self.head(...)
+        # print(f"[DEBUG] head output shape: {logits.shape}")
+        # print(f"[DEBUG] Expected: [B={b}, W'={w_f}, Classes=37]")
+
+        # return logits.log_softmax(2)  # [B, W', Classes]
+        return logits
 
     def verify_architecture(self) -> dict:
         """Kiểm tra và trả về thông tin về architecture của model."""
