@@ -40,6 +40,10 @@ class Trainer:
         self.config = config
         self.idx2char = idx2char
         self.device = config.DEVICE
+        # Model nào có country_emb (MultiFrameSVTRv2) thì sẽ nhận thêm country_ids
+        self.use_country_ids = hasattr(model, "country_emb")
+        # Gradient accumulation để có effective batch lớn hơn
+        self.accum_steps: int = max(1, int(getattr(config, "ACCUM_STEPS", 1)))
         seed_everything(config.SEED, benchmark=config.USE_CUDNN_BENCHMARK)
 
         # Loss: focal-style CTC (sample-level weighting) or standard mean
@@ -62,7 +66,7 @@ class Trainer:
             epochs=config.EPOCHS
         )
 
-        # Train tiếp từ epoch có sẵn best acc 
+        # Train tiếp từ epoch có sẵn best acc
         """
         self.scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(
             self.optimizer,
@@ -142,88 +146,105 @@ class Trainer:
         skipped_nan = 0  # Đếm batch bị bỏ qua do loss NaN
         pbar = tqdm(self.train_loader,
                     desc=f"Ep {self.current_epoch + 1}/{self.config.EPOCHS}")
-        prev_optimizer_stepped = False
+        accum_counter = 0  # Đếm số batch đã cộng dồn gradient
 
-        for images, targets, target_lengths, _, _, _ in pbar:
-            # Gọi scheduler.step() sau optimizer.step() của batch trước (tránh warning PyTorch)
-            if prev_optimizer_stepped:
-                self.scheduler.step()
-            prev_optimizer_stepped = False
-
+        for images, targets, target_lengths, _, _, _, country_ids in pbar:
             images = images.to(self.device)
             targets = targets.to(self.device)
+            country_ids = country_ids.to(self.device)
 
-            self.optimizer.zero_grad(set_to_none=True)
-
+            # Mixed precision chỉ dùng cho forward; loss/CTC tính ở float32 để tránh NaN
             with autocast('cuda'):
-                preds = self.model(images)
-                
-                # Apply label smoothing BEFORE permute
-                if self.label_smoothing > 0 and self.model.training:
-                    num_classes = preds.size(-1)
-                    # Smooth logits: (1-α)·pred + α/K
-                    preds = preds * (1 - self.label_smoothing) + \
-                            self.label_smoothing / num_classes
-                
-                preds_permuted = preds.permute(1, 0, 2)
-                input_lengths = torch.full(
-                    size=(images.size(0),),
-                    fill_value=preds.size(1),
-                    dtype=torch.long
-                )
-                loss_per_sample = self.criterion(
-                    preds_permuted, targets, input_lengths, target_lengths)
-
-                if self.use_focal_ctc:
-                    # CTC có thể trả inf cho sample lỗi; clamp để tránh nan
-                    loss_per_sample_safe = torch.clamp(
-                        loss_per_sample, min=-20.0, max=20.0)
-                    loss_per_sample_safe = torch.nan_to_num(
-                        loss_per_sample_safe, nan=20.0, posinf=20.0, neginf=-20.0)
-                    clamped = loss_per_sample_safe
-                    weight = (1 - torch.exp(-clamped)) ** 2
-                    loss = (loss_per_sample_safe * weight).mean()
+                if self.use_country_ids:
+                    preds = self.model(images, country_ids)
                 else:
-                    loss = loss_per_sample
+                    preds = self.model(images)
 
-            # Bỏ qua batch nếu loss nan/inf (tránh làm hỏng trọng số)
-            if not torch.isfinite(loss).all():
-                skipped_nan += 1
-                pbar.set_postfix(
-                    {'loss': 'nan(skip)', 'lr': self.scheduler.get_last_lr()[0]})
-                continue
+            # Đảm bảo logits cho CTC ở float32 (ổn định hơn so với float16)
+            preds = preds.float()
+            # Chuẩn hoá logits: thay NaN/Inf bằng giá trị hữu hạn và giới hạn biên
+            preds = torch.nan_to_num(preds, nan=0.0, posinf=20.0, neginf=-20.0)
+            preds = torch.clamp(preds, min=-20.0, max=20.0)
 
+            # Apply label smoothing BEFORE permute
+            if self.label_smoothing > 0 and self.model.training:
+                num_classes = preds.size(-1)
+                # Smooth logits: (1-α)·pred + α/K
+                preds = preds * (1 - self.label_smoothing) + \
+                    self.label_smoothing / num_classes
+
+            # preds_permuted = preds.permute(1, 0, 2)
+            preds_logs = preds.log_softmax(2)
+            preds_permuted = preds_logs.permute(1, 0, 2)
+            input_lengths = torch.full(
+                size=(images.size(0),),
+                fill_value=preds.size(1),
+                dtype=torch.long
+            )
+            loss_per_sample = self.criterion(
+                preds_permuted, targets, input_lengths, target_lengths)
+
+            if self.use_focal_ctc:
+                # CTC có thể trả inf cho sample lỗi; clamp để tránh nan
+                loss_per_sample_safe = torch.nan_to_num(
+                    loss_per_sample, nan=20.0, posinf=20.0, neginf=20.0)
+                clamped = torch.clamp(loss_per_sample_safe, min=0.0, max=20.0)
+                weight = (1 - torch.exp(-clamped)) ** 2
+                loss = (loss_per_sample_safe * weight).mean()
+            else:
+                # Với CTC thường (reduction='mean'): biến NaN/Inf thành số hữu hạn và ép loss >= 0
+                loss = torch.nan_to_num(
+                    loss_per_sample, nan=20.0, posinf=20.0, neginf=20.0)
+                loss = torch.clamp(loss, min=0.0)
+
+            # Gradient accumulation: chia loss theo số bước tích lũy
+            effective_loss = loss / self.accum_steps
             # Scale loss & backward
-            self.scaler.scale(loss).backward()
+            self.scaler.scale(effective_loss).backward()
+            accum_counter += 1
 
-            # Unscale (required before gradient clipping)
-            self.scaler.unscale_(self.optimizer)
+            # Khi đủ accum_steps hoặc là batch cuối cùng, mới step optimizer + scheduler
+            if accum_counter % self.accum_steps == 0:
+                # Unscale (required before gradient clipping)
+                self.scaler.unscale_(self.optimizer)
 
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), self.config.GRAD_CLIP)
+                # Gradient clipping
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.config.GRAD_CLIP)
 
-            # Step optimizer & update scaler
-            scale_before = self.scaler.get_scale()
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-            if self.scaler.get_scale() >= scale_before:
-                prev_optimizer_stepped = True
+                # Step optimizer & update scaler
+                scale_before = self.scaler.get_scale()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                if self.scaler.get_scale() >= scale_before:
+                    self.scheduler.step()
 
+                # Chuẩn bị cho nhóm batch tiếp theo
+                self.optimizer.zero_grad(set_to_none=True)
+
+            # Lưu epoch_loss theo loss gốc (chưa chia)
             epoch_loss += loss.item()
             pbar.set_postfix(
                 {'loss': loss.item(), 'lr': self.scheduler.get_last_lr()[0]})
 
-        # Scheduler step cho batch cuối cùng (đã gọi optimizer.step() ở trên)
-        if prev_optimizer_stepped:
-            self.scheduler.step()
+        # Nếu còn gradient dở dang (không chia hết cho accum_steps), step nốt + scheduler
+        if accum_counter % self.accum_steps != 0:
+            self.scaler.unscale_(self.optimizer)
+            torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), self.config.GRAD_CLIP)
+            scale_before = self.scaler.get_scale()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+            if self.scaler.get_scale() >= scale_before:
+                self.scheduler.step()
+            self.optimizer.zero_grad(set_to_none=True)
 
         if skipped_nan > 0:
-            print(f"   ⚠️ Skipped {skipped_nan}/{len(self.train_loader)} batches (loss NaN). "
-                  "Thử --no-pretrained hoặc giảm LEARNING_RATE.")
+            print(
+                f"   ⚠️ Có {skipped_nan} batch loss ban đầu không hợp lệ (NaN/Inf) nhưng đã được chuẩn hoá bằng nan_to_num.")
 
-        valid_batches = len(self.train_loader) - skipped_nan
-        return epoch_loss / valid_batches if valid_batches > 0 else float('nan')
+        total_batches = len(self.train_loader)
+        return epoch_loss / max(1, total_batches)
 
     def validate(self) -> Tuple[Dict[str, float], List[str], List[Tuple[str, str, str, float, str]]]:
         """Run validation and generate submission data.
@@ -246,18 +267,25 @@ class Trainer:
         wrong_predictions: List[Tuple[str, str, str, float, str]] = []
 
         with torch.no_grad():
-            for images, targets, target_lengths, labels_text, track_ids, img_paths_batch in self.val_loader:
+            for images, targets, target_lengths, labels_text, track_ids, img_paths_batch, country_ids in self.val_loader:
                 images = images.to(self.device)
                 targets = targets.to(self.device)
-                preds = self.model(images)
+                country_ids = country_ids.to(self.device)
+                if self.use_country_ids:
+                    preds = self.model(images, country_ids)
+                else:
+                    preds = self.model(images)
+
+
+                preds_logs = preds.log_softmax(2)
 
                 input_lengths = torch.full(
                     (images.size(0),),
-                    preds.size(1),
+                    preds_logs.size(1),
                     dtype=torch.long
                 )
                 loss = self.criterion_val(
-                    preds.permute(1, 0, 2),
+                    preds_logs.permute(1, 0, 2),
                     targets,
                     input_lengths,
                     target_lengths
@@ -269,7 +297,7 @@ class Trainer:
 
                 beam_width = getattr(self.config, 'CTC_BEAM_WIDTH', 1)
                 decoded_list = decode_with_confidence(
-                    preds, self.idx2char, beam_width=beam_width)
+                    preds_logs, self.idx2char, beam_width=beam_width)
 
                 for i, (pred_text, conf) in enumerate(decoded_list):
                     gt_text = labels_text[i]
@@ -290,7 +318,8 @@ class Trainer:
 
                 total_samples += len(labels_text)
 
-        avg_val_loss = val_loss / val_loss_count if val_loss_count > 0 else float('nan')
+        avg_val_loss = val_loss / \
+            val_loss_count if val_loss_count > 0 else float('nan')
         val_acc = (total_correct / total_samples) * \
             100 if total_samples > 0 else 0.0
         val_cer = compute_cer(all_preds, list(all_targets))
@@ -331,7 +360,8 @@ class Trainer:
                 pred_s = pred.replace('\t', ' ').replace('\n', ' ')
                 img_s = img_paths_str.replace('\t', ' ').replace('\n', ' ')
                 f.write(f"{track_id}\t{gt_s}\t{pred_s}\t{conf:.4f}\t{img_s}\n")
-        print(f"📋 Saved {len(wrong_predictions)} wrong predictions to {filename}")
+        print(
+            f"📋 Saved {len(wrong_predictions)} wrong predictions to {filename}")
 
     def save_wrong_images(
         self,
@@ -429,7 +459,8 @@ class Trainer:
 
         # Lưu training history
         exp_name = self._get_exp_name()
-        history_path = self._get_output_path(f"training_history_{exp_name}.json")
+        history_path = self._get_output_path(
+            f"training_history_{exp_name}.json")
         with open(history_path, 'w', encoding='utf-8') as f:
             json.dump({
                 'experiment': exp_name,
@@ -454,7 +485,8 @@ class Trainer:
         print(f"\n✅ Training complete! Best Val Acc: {self.best_acc:.2f}%")
         if self.history and self.val_loader:
             last = self.history[-1]
-            print(f"   Val: {last.get('val_correct', 0)}/{last.get('val_total', 0)} correct")
+            print(
+                f"   Val: {last.get('val_correct', 0)}/{last.get('val_total', 0)} correct")
 
     def predict(self, loader: DataLoader) -> List[Tuple[str, str, float]]:
         """Run inference on a data loader.
@@ -466,13 +498,20 @@ class Trainer:
         results: List[Tuple[str, str, float]] = []
 
         with torch.no_grad():
-            for images, _, _, _, track_ids, _ in loader:
+            for images, _, _, _, track_ids, _, country_ids in loader:
                 images = images.to(self.device)
-                preds = self.model(images)
+                country_ids = country_ids.to(self.device)
+                if self.use_country_ids:
+                    preds = self.model(images, country_ids)
+                else:
+                    preds = self.model(images)
+
+                preds_logs = preds.log_softmax(2)
 
                 beam_width = getattr(self.config, 'CTC_BEAM_WIDTH', 1)
                 decoded_list = decode_with_confidence(
-                    preds, self.idx2char, beam_width=beam_width)
+                    preds_logs, self.idx2char, beam_width=beam_width)
+                
                 for i, (pred_text, conf) in enumerate(decoded_list):
                     results.append((track_ids[i], pred_text, conf))
 
@@ -491,9 +530,11 @@ class Trainer:
         results = []
         self.model.eval()
         with torch.no_grad():
-            for images, _, _, _, track_ids, _ in tqdm(test_loader, desc="Test Inference"):
+            for images, _, _, _, track_ids, _, country_ids in tqdm(test_loader, desc="Test Inference"):
                 images = images.to(self.device)
-                preds = self.model(images)
+                country_ids = country_ids.to(self.device)
+                preds = self.model(images, country_ids)
+                preds_logs = preds.log_softmax(2)
                 beam_width = getattr(self.config, 'CTC_BEAM_WIDTH', 1)
                 decoded_list = decode_with_confidence(
                     preds, self.idx2char, beam_width=beam_width)
@@ -508,4 +549,4 @@ class Trainer:
         with open(output_path, 'w') as f:
             f.write("\n".join(submission_data))
 
-        print(f"✅ Saved {len(submission_data)} predictions to {output_path}")
+        print(f"Saved {len(submission_data)} predictions to {output_path}")
