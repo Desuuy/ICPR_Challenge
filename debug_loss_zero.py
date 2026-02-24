@@ -54,8 +54,8 @@ try:
     # Preds: [Seq, Batch, Classes] (CTC expects time-first)
     preds = torch.randn(seq_len, batch_size, num_classes).log_softmax(2)
     
-    # Targets
-    targets = torch.tensor([1, 2, 3, 4, 5, 6, 7])  # "ABC1234"
+    # Targets: flattened, one sequence per sample. batch_size=2, each length 7 → 14 elements total
+    targets = torch.tensor([1, 2, 3, 4, 5, 6, 7, 1, 2, 3, 4, 5, 6, 7])
     target_lengths = torch.tensor([7, 7])
     input_lengths = torch.tensor([seq_len, seq_len])
     
