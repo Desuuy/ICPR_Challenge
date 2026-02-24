@@ -277,8 +277,10 @@ def _run_training(args, config):
         'seed': config.SEED,
         'augmentation_level': config.AUGMENTATION_LEVEL,
         'same_aug_per_sample': getattr(config, 'SAME_AUG_PER_SAMPLE', True),
+        'use_msr': getattr(config, 'USE_MSR', False), 
+        'msr_width_min': getattr(config, 'MSR_WIDTH_MIN', 64),  
+        'msr_width_max': getattr(config, 'MSR_WIDTH_MAX', 256),  
     }
-
     # Optional: initialize super-resolution enhancer
     sr_enhancer = None
     if getattr(config, "USE_SR", False):
