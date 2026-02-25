@@ -18,11 +18,12 @@ class MultiFrameSVTRv2(nn.Module):
     def __init__(self, num_classes, use_stn=True, dropout=0.1, use_temp_scaling=False):
         super().__init__()
         self.use_stn = use_stn
+        self.num_classes = num_classes
         # 1. STN để nắn thẳng biển số trước khi vào backbone
         self.stn = STNBlock(in_channels=3, dropout=dropout)
 
         self.backbone = SVTRv2LNConvTwo33(
-            max_sz=[32, 128],
+            max_sz=[32, 256],  # Chỉnh từ 128 -> 256
             dims=[128, 256, 384],
             depths=[6, 6, 6],
             num_heads=[4, 8, 12],
@@ -59,67 +60,60 @@ class MultiFrameSVTRv2(nn.Module):
 
 
     def load_unirec_weights(self, weight_path: str):
-        """Nạp trọng số UniRec/GTC checkpoint vào model.
-
-        Checkpoint từ weights/config.yml (GTCDecoder) có cấu trúc:
-        - encoder.* -> backbone.*
-        - decoder.ctc_decoder.* -> head.*
-        """
+        """Nạp trọng số UniRec/GTC với logic nội suy Positional Embedding (128 -> 256)."""
         if not os.path.exists(weight_path):
             print(f"⚠️ Không tìm thấy file tại: {weight_path}")
             return
 
         try:
-            checkpoint = torch.load(
-                weight_path, map_location='cpu', weights_only=True)
+            checkpoint = torch.load(weight_path, map_location='cpu', weights_only=True)
         except TypeError:
             checkpoint = torch.load(weight_path, map_location='cpu')
+        
         state_dict = checkpoint.get('state_dict', checkpoint)
         model_dict = self.state_dict()
 
         def remap_key(key: str) -> str:
             key = key.replace("module.", "")
             key = key.replace("encoder.", "backbone.")
-            # GTCDecoder: decoder.ctc_decoder.* -> head.*
             key = key.replace("decoder.ctc_decoder.", "head.")
             return key
 
-        # Remap toàn bộ checkpoint trước
-        state_dict_remap = {remap_key(k): v for k, v in state_dict.items()}
-
         filtered_dict = {}
-        for k, v in state_dict_remap.items():
+        for k_orig, v in state_dict.items():
+            k = remap_key(k_orig)
             if k not in model_dict:
                 continue
+                
             md_shape = model_dict[k].shape
-            if v.shape == md_shape:
+            
+            # 1. XỬ LÝ NỘI SUY POS_EMBED (Cho MSR 256)
+            if "pos_embed" in k and v.shape!= md_shape:
+                print(f"🔄 Nội suy Positional Embedding: {v.shape} -> {md_shape}")
+                # v có shape. Nội suy lên
+                # Sửa lỗi index: H và W nằm ở index 2 và 3
+                v = F.interpolate(v, size=(md_shape[3], md_shape[4]), 
+                                mode='bicubic', align_corners=False)
                 filtered_dict[k] = v
-            elif k == "head.fc.weight" and v.dim() == 2:
-                # Checkpoint có vocab lớn (6625), model có 37 classes -> slice N class đầu
-                if v.shape[1] == md_shape[1] and v.shape[0] >= md_shape[0]:
-                    filtered_dict[k] = v[:md_shape[0], :].clone()
-                elif v.shape == md_shape:
-                    filtered_dict[k] = v
-            elif k == "head.fc.bias" and v.dim() == 1:
-                if v.shape[0] >= md_shape[0]:
-                    filtered_dict[k] = v[:md_shape[0]].clone()
-                elif v.shape == md_shape:
-                    filtered_dict[k] = v
 
-        if len(filtered_dict) == 0 and len(state_dict) > 0:
-            ck_keys = list(state_dict.keys())[:8]
-            md_keys = list(model_dict.keys())[:8]
-            print(f"   (Checkpoint keys mẫu: {ck_keys})")
-            print(f"   (Model keys mẫu: {md_keys})")
+            # 2. XỬ LÝ LỆCH LỚP (Vocab 6625 -> 37)
+            elif k == "head.fc.weight" and v.dim() == 2:
+                if v.shape[7] == md_shape[7] and v.shape >= md_shape:
+                    filtered_dict[k] = v[:md_shape, :].clone()
+            elif k == "head.fc.bias" and v.dim() == 1:
+                if v.shape >= md_shape:
+                    filtered_dict[k] = v[:md_shape].clone()
+
+            # 3. NẠP CÁC LAYER TRÙNG KHỚP KHÁC
+            elif v.shape == md_shape:
+                filtered_dict[k] = v
 
         model_dict.update(filtered_dict)
         self.load_state_dict(model_dict, strict=False)
 
         loaded_head = sum(1 for k in filtered_dict if k.startswith("head."))
         loaded_backbone = sum(1 for k in filtered_dict if k.startswith("backbone."))
-        print(
-            f"✅ Đã nạp thành công {len(filtered_dict)} layers từ checkpoint "
-            f"(backbone: {loaded_backbone}, head: {loaded_head})")
+        print(f"✅ Đã nạp thành công {len(filtered_dict)} layers (backbone: {loaded_backbone}, head: {loaded_head})")
 
     # Load weights
     def load_weights(self, weight_path: str):
@@ -185,8 +179,9 @@ class MultiFrameSVTRv2(nn.Module):
         # Chuẩn hóa về [B, W', Classes]
         if logits.dim() == 4:  # [B, Classes, 1, W']
             logits = logits.squeeze(2)  # [B, Classes, W']
-            
-        if logits.dim() == 3 and logits.size(1) == 37:  # [B, Classes, W']
+
+        # Chuẩn hoá về [B, W', Classes] cho CTC (không phụ thuộc số lớp cụ thể)
+        if logits.dim() == 3:  # [B, Classes, W']
             logits = logits.permute(0, 2, 1)  # [B, W', Classes]
 
         # Apply temperature scaling
