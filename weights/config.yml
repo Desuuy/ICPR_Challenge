@@ -109,7 +109,7 @@ PostProcess:
   gtc_label_decode:
     name: SMTRLabelDecode
     next_mode: true
-  character_dict_path: ./tools/utils/EN_symbol_dict.txt
+  character_dict_path: ./EN_symbol_dict.txt
   use_space_char: false
 Metric:
   name: RecGTCMetric
@@ -134,7 +134,7 @@ Train:
         gtc_label_encode:
           name: SMTRLabelEncode
           sub_str_len: 5
-        character_dict_path: ./tools/utils/EN_symbol_dict.txt
+        character_dict_path: ./EN_symbol_dict.txt
         use_space_char: false
         max_text_length: 25
     - KeepKeys:
