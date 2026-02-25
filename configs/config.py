@@ -10,11 +10,10 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 @dataclass
 class Config:
-    """Training configuration with all hyperparameters."""
 
     # File config nếu train tiếp 
     SCHEDULER_TYPE: str = "cosine" # "onecycle" or "cosine"
-    LEARNING_RATE: float = 3e-5  
+    LEARNING_RATE: float = 0.000325  
     EPOCHS: int = 1
     CTC_BEAM_WIDTH: int = 5
     # Label smoothing cho CTC: tạm thời đặt 0.0 để tránh làm sai phân phối log-prob của CTC
@@ -23,50 +22,73 @@ class Config:
     SUBMISSION_MODE: bool = False
 
     IMG_HEIGHT: int = 32
-    IMG_WIDTH: int = 128
+    IMG_WIDTH: int = 256
 
     # Multi-Scale Resize (MSR)
     USE_MSR: bool = True  # Bật MSR
     MSR_WIDTH_MIN: int = 64
     # MAX width cho MSR phải khớp backbone SVTRv2 (max_sz=[32, 128])
-    # Nếu muốn >128 cần sửa cả mf_svtrv2.py (max_sz) và pos_embed trong SVTRv2LNConvTwo33.
-    MSR_WIDTH_MAX: int = 128
+    MSR_WIDTH_MAX: int = 256  # Chỉnh từ 128 -> 256
+
+    DROPOUT: float = 0.05   
 
     # Focus on hard samples (sample-level weighting)
     # Bật Focal Loss CTC
     USE_FOCAL_CTC: bool = False  
-    # Enable Spatial Transformer Network (False to avoid NaN when STN chưa học)
+    # Bật nhánh GTC/SMTR (GTCLoss + GTCDecoder) để tận dụng toàn bộ kiến trúc như config.yml gốc.
+    # Mặc định False để pipeline CTC hiện tại chạy ổn định; khi đã lắp ráp xong ta sẽ bật lên.
+    USE_GTC: bool = False
     # Bật STN 
     USE_STN: bool = False   
+
     # Super-Resolution (MF-LPR SR) - requires sr_model/ (LP-Diff or similar)
     USE_SR: bool = False
 
+    # Save wrong predictions for analysis
+    SAVE_WRONG_PREDICTIONS: bool = True
+
+    # Copy wrong-prediction images to results/wrong_images_*/ for inspection
+    SAVE_WRONG_IMAGES: bool = True
+
     # Training hyperparameters
     BATCH_SIZE: int = 32
-    LEARNING_RATE: float = 0.0003 # Giảm từ 0.00325 để tránh gradient explosion/NaN
-    EPOCHS: int = 1
     SEED: int = 42
     NUM_WORKERS: int = 10
-    WEIGHT_DECAY: float = 0.1
+    WEIGHT_DECAY: float = 0.05 
     GRAD_CLIP: float = 1.0  
     # Gradient accumulation steps (Effective Batch = BATCH_SIZE * ACCUM_STEPS)
     ACCUM_STEPS: int = 8
     SPLIT_RATIO: float = 0.9
-    # 1 = greedy decode; 5–10 = beam search
-    CTC_BEAM_WIDTH: int = 5
+
     # Same augmentation for all 5 frames 
     SAME_AUG_PER_SAMPLE: bool = True  
     # Dropout in STN/Fusion (0 = disabled)
-    DROPOUT: float = 0.05   
+    
     USE_CUDNN_BENCHMARK: bool = False
 
     USE_TEMP_SCALING: bool = False
+
+  
     # Experiment tracking
     # "crnn" or "restran" or "mf_svtrv2"
     MODEL_TYPE: str = "mf_svtrv2" 
     EXPERIMENT_NAME: str = MODEL_TYPE
     AUGMENTATION_LEVEL: str = "light"  # "full" or "light"
-    
+
+    # Character set cho CTC/GTC (khớp EN_symbol_dict.txt)
+    # Nếu sau này bạn đổi file vocab, chỉ cần sửa CHARS cho trùng là được.
+    CHARS: str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+    # Độ dài tối đa chuỗi text dùng cho encoder GTC (SMTR) khi ta bật nhánh GTC
+    # (config.yml gốc dùng 25; với biển số 7 ký tự thì 10–12 cũng đủ, nhưng 25 an toàn hơn).
+    MAX_TEXT_LENGTH: int = 25
+
+    # Đường dẫn file vocab theo format OpenRec (mỗi ký tự 1 dòng).
+    # Hiện đang trỏ tới EN_symbol_dict.txt mà bạn đã tạo.
+    CHAR_DICT_PATH: str = field(default_factory=lambda: os.path.join(
+        _PROJECT_ROOT, "EN_symbol_dict.txt"))
+
+
     # Data paths 
     DATA_ROOT: str = field(default_factory=lambda: os.path.join(
         _PROJECT_ROOT, "Data", "train"))
@@ -75,17 +97,7 @@ class Config:
     VAL_SPLIT_FILE: str = field(default_factory=lambda: os.path.join(
         _PROJECT_ROOT, "Data", "val_tracks.json"))
     SUBMISSION_FILE: str = "submission.txt"
-
-  
-
-    # Character set
-    CHARS: str = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         
-    # Save wrong predictions for analysis
-    SAVE_WRONG_PREDICTIONS: bool = True
-    # Copy wrong-prediction images to results/wrong_images_*/ for inspection
-    SAVE_WRONG_IMAGES: bool = True
-    
     SR_CHECKPOINT_PATH: str = field(default_factory=lambda: os.path.join(
         _PROJECT_ROOT, "weights", "gen_best_psnr.pth"))
     SR_CONFIG_PATH: str = field(default_factory=lambda: os.path.join(
