@@ -2,7 +2,15 @@ import re
 
 import numpy as np
 
-from tools.utils.logging import get_logger
+# NOTE: OpenRec gốc dùng tools.utils.logging. Trong repo MultiFrame-LPR của bạn
+# không có module tools/, nên ta fallback sang logging chuẩn để tránh ImportError.
+try:
+    from tools.utils.logging import get_logger  # type: ignore
+except ImportError:  # chạy trong pipeline của bạn sẽ đi vào nhánh này
+    import logging
+
+    def get_logger():
+        return logging.getLogger(__name__)
 
 
 class BaseRecLabelEncode(object):
