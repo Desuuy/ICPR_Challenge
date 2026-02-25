@@ -13,6 +13,10 @@ from tqdm import tqdm
 
 from src.utils.common import seed_everything
 from src.utils.postprocess import decode_with_confidence, compute_cer
+# GTC/SMTR label encoders từ OpenRec (sử dụng cùng vocab với EN_symbol_dict.txt).
+# Hiện tại ta chỉ khởi tạo sẵn, bước sau mới dùng để lắp GTCLoss + GTCDecoder.
+from src.openrec.preprocess.smtr_label_encode import SMTRLabelEncode
+from src.openrec.preprocess.ctc_label_encode import CTCLabelEncode
 
 
 class Trainer:
@@ -45,6 +49,33 @@ class Trainer:
         # Gradient accumulation để có effective batch lớn hơn
         self.accum_steps: int = max(1, int(getattr(config, "ACCUM_STEPS", 1)))
         seed_everything(config.SEED, benchmark=config.USE_CUDNN_BENCHMARK)
+
+        # === Giai đoạn 1: Chuẩn bị encoder nhãn cho nhánh GTC/SMTR (chưa thay loss) ===
+        # Khi USE_GTC=True, ta dùng lại logic encode của OpenRec: CTCLabelEncode + SMTRLabelEncode.
+        # Mục tiêu: tạo ra đúng các tensor label/length/... mà GTCLoss / SMTRLoss và GTCDecoder mong đợi.
+        self.use_gtc: bool = bool(getattr(config, "USE_GTC", False))
+        self.ctc_encoder: Optional[CTCLabelEncode]
+        self.smtr_encoder: Optional[SMTRLabelEncode]
+        if self.use_gtc:
+            max_len = int(getattr(config, "MAX_TEXT_LENGTH", 25))
+            char_dict_path = getattr(config, "CHAR_DICT_PATH", None)
+            # Encoder cho nhánh CTC trong GTCLoss (dùng cùng vocab file)
+            self.ctc_encoder = CTCLabelEncode(
+                max_text_length=max_len,
+                character_dict_path=char_dict_path,
+                use_space_char=False,
+            )
+            # Encoder cho nhánh GTC (SMTRLabelEncode): sinh thêm label_subs, label_next, ...
+            self.smtr_encoder = SMTRLabelEncode(
+                max_text_length=max_len,
+                character_dict_path=char_dict_path,
+                use_space_char=False,
+                sub_str_len=5,
+            )
+        else:
+            # Pipeline CTC hiện tại: chưa dùng GTC, nhưng giữ field None để code phía sau dễ kiểm tra.
+            self.ctc_encoder = None
+            self.smtr_encoder = None
 
         # Loss: focal-style CTC (sample-level weighting) or standard mean
         self.use_focal_ctc = getattr(config, 'USE_FOCAL_CTC', False)
