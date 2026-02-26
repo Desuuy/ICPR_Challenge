@@ -18,21 +18,26 @@ for root, dirs, files in os.walk(ROOT):
         label = data.get("plate_text") or data.get("license_plate") or data.get("text")
         if not label:
             continue
-        # lấy 1 ảnh HR đại diện, ví dụ hr-001.png
-        img_name = "hr-001.png"
-        ipath = os.path.join(root, img_name)
-        if not os.path.exists(ipath):
-            continue
-        # copy ảnh sang thư mục phẳng
+        # lấy cả ảnh HR và LR của track này (nếu tồn tại)
         track_id = os.path.basename(root)
-        new_name = f"{track_id}.png"
-        new_path = os.path.join(IMG_DIR, new_name)
-        if not os.path.exists(new_path):
-            import shutil
-            shutil.copy2(ipath, new_path)
-        # dòng: relative_path \t label
-        rel_path = os.path.relpath(new_path, IMG_DIR)
-        lines.append(f"{rel_path}\t{label}\n")
+        for fname in files:
+            if not fname.lower().endswith(".png"):
+                continue
+            # chỉ quan tâm tới hr-xxx.png và lr-xxx.png
+            if not (fname.startswith("hr-") or fname.startswith("lr-")):
+                continue
+            ipath = os.path.join(root, fname)
+            if not os.path.exists(ipath):
+                continue
+            # đặt tên file phẳng để không đụng nhau giữa các track/frame
+            new_name = f"{track_id}_{fname}"
+            new_path = os.path.join(IMG_DIR, new_name)
+            if not os.path.exists(new_path):
+                import shutil
+                shutil.copy2(ipath, new_path)
+            # dòng: relative_path \t label
+            rel_path = os.path.relpath(new_path, IMG_DIR)
+            lines.append(f"{rel_path}\t{label}\n")
 
 with open(LABEL_FILE, "w", encoding="utf-8") as f:
     f.writelines(lines)
