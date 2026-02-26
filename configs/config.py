@@ -107,7 +107,7 @@ class Config:
 
     # Pretrained path
     PRETRAINED_PATH: str = field(default_factory=lambda: os.path.join(
-        _PROJECT_ROOT, "weights", "best.pth"))
+        _PROJECT_ROOT, "weights", "ocr_best.pth"))
 
     # CRNN model hyperparameters
     HIDDEN_SIZE: int = 256
