@@ -84,28 +84,35 @@ class MultiFrameSVTRv2(nn.Module):
             k = remap_key(k_orig)
             if k not in model_dict:
                 continue
-                
-            md_shape = model_dict[k].shape
-            
-            # 1. XỬ LÝ NỘI SUY POS_EMBED (Cho MSR 256)
-            if "pos_embed" in k and v.shape!= md_shape:
-                print(f"🔄 Nội suy Positional Embedding: {v.shape} -> {md_shape}")
-                # v có shape. Nội suy lên
-                # Sửa lỗi index: H và W nằm ở index 2 và 3
-                v = F.interpolate(v, size=(md_shape[3], md_shape[4]), 
-                                mode='bicubic', align_corners=False)
-                filtered_dict[k] = v
 
-            # 2. XỬ LÝ LỆCH LỚP (Vocab 6625 -> 37)
-            elif k == "head.fc.weight" and v.dim() == 2:
-                if v.shape[7] == md_shape[7] and v.shape >= md_shape:
-                    filtered_dict[k] = v[:md_shape, :].clone()
-            elif k == "head.fc.bias" and v.dim() == 1:
-                if v.shape >= md_shape:
-                    filtered_dict[k] = v[:md_shape].clone()
+            md_tensor = model_dict[k]
+            md_shape = md_tensor.shape
+
+            # 1. XỬ LÝ NỘI SUY POS_EMBED (Cho MSR 256)
+            if "pos_embed" in k and v.shape != md_shape and v.dim() >= 3 and len(md_shape) >= 3:
+                # pos_embed thường có shape [1, C, H, W] hoặc [1, H, W, C]
+                # Ta chỉ nội suy theo 2 chiều cuối cùng để tránh lỗi index.
+                print(f"🔄 Nội suy Positional Embedding: {v.shape} -> {md_shape}")
+                target_hw = md_shape[-2:]  # luôn lấy 2 chiều cuối cùng
+                v = F.interpolate(
+                    v,
+                    size=target_hw,
+                    mode="bicubic",
+                    align_corners=False,
+                )
+                filtered_dict[k] = v
+                continue
+
+            # 2. BỎ QUA CÁC LỚP HEAD CÓ SHAPE KHÔNG KHỚP (vocab khác nhau)
+            #    Ta sẽ train lại head CTC trên dataset biển số, chỉ giữ backbone from pretrain.
+            if k.startswith("head."):
+                # Nếu shape khớp hoàn toàn thì vẫn có thể nạp, còn không thì bỏ qua.
+                if v.shape == md_shape:
+                    filtered_dict[k] = v
+                continue
 
             # 3. NẠP CÁC LAYER TRÙNG KHỚP KHÁC
-            elif v.shape == md_shape:
+            if v.shape == md_shape:
                 filtered_dict[k] = v
 
         model_dict.update(filtered_dict)
