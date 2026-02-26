@@ -12,8 +12,8 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 class Config:
 
     # File config nếu train tiếp 
-    SCHEDULER_TYPE: str = "cosine" # "onecycle" or "cosine"
-    LEARNING_RATE: float = 0.000325  
+    SCHEDULER_TYPE: str = "cosine"  # "onecycle" or "cosine"
+    LEARNING_RATE: float = 0.000325
     EPOCHS: int = 1
     CTC_BEAM_WIDTH: int = 5
     # Label smoothing cho CTC: tạm thời đặt 0.0 để tránh làm sai phân phối log-prob của CTC
@@ -25,7 +25,9 @@ class Config:
     IMG_WIDTH: int = 256
 
     # Multi-Scale Resize (MSR)
-    USE_MSR: bool = True  # Bật MSR
+    # Để đơn giản pipeline và debug dễ hơn, mặc định TẮT MSR;
+    # khi đã ổn định có thể bật lại để tăng robustness.
+    USE_MSR: bool = False
     MSR_WIDTH_MIN: int = 64
     # MAX width cho MSR phải khớp backbone SVTRv2 (max_sz=[32, 128])
     MSR_WIDTH_MAX: int = 256  # Chỉnh từ 128 -> 256
@@ -33,10 +35,9 @@ class Config:
     DROPOUT: float = 0.05   
 
     # Focus on hard samples (sample-level weighting)
-    # Bật Focal Loss CTC
-    USE_FOCAL_CTC: bool = False  
-    # Bật nhánh GTC/SMTR (GTCLoss + GTCDecoder) để tận dụng toàn bộ kiến trúc như config.yml gốc.
-    # Mặc định False để pipeline CTC hiện tại chạy ổn định; khi đã lắp ráp xong ta sẽ bật lên.
+    # Bật Focal Loss CTC / nhánh GTC khi đã debug xong.
+    USE_FOCAL_CTC: bool = False
+    # Nhánh GTC/SMTR (GTCLoss + GTCDecoder) – giữ False để pipeline CTC cơ bản ổn định.
     USE_GTC: bool = False
     # Bật STN 
     USE_STN: bool = False   
@@ -67,6 +68,10 @@ class Config:
     USE_CUDNN_BENCHMARK: bool = False
 
     USE_TEMP_SCALING: bool = False
+
+    # Overfit subset nhỏ để debug (0 = tắt)
+    OVERFIT_NUM_TRAIN_SAMPLES: int = 0
+    OVERFIT_NUM_VAL_SAMPLES: int = 0
 
   
     # Experiment tracking

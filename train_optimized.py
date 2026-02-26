@@ -8,7 +8,7 @@ from src.models.crnn import MultiFrameCRNN
 from src.data.dataset import MultiFrameDataset
 from src.sr import MF_LPR_SR
 from configs.config import Config
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 import torch
 import argparse
 import os
@@ -391,6 +391,20 @@ def _run_training(args, config):
             print("⚠️ WARNING: Validation dataset is empty.")
 
         test_loader = None
+
+    # ------------------------------------------------------------
+    # Tuỳ chọn: overfit trên subset nhỏ để debug (train/val)
+    # ------------------------------------------------------------
+    overfit_n_train = int(getattr(config, "OVERFIT_NUM_TRAIN_SAMPLES", 0))
+    overfit_n_val = int(getattr(config, "OVERFIT_NUM_VAL_SAMPLES", 0))
+    if overfit_n_train > 0:
+        n = min(overfit_n_train, len(train_ds))
+        train_ds = Subset(train_ds, range(n))
+        print(f"📌 OVERFIT MODE: dùng {n} samples train đầu tiên.")
+    if not submission_mode and overfit_n_val > 0 and val_loader is not None:
+        n = min(overfit_n_val, len(val_ds))
+        val_ds = Subset(val_ds, range(n))
+        print(f"📌 OVERFIT MODE: dùng {n} samples val đầu tiên.")
 
     if len(train_ds) == 0:
         print("❌ Training dataset is empty!")

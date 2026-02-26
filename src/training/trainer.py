@@ -175,9 +175,15 @@ class Trainer:
         self.model.train()
         epoch_loss = 0.0
         skipped_nan = 0  # Đếm batch bị bỏ qua do loss NaN
-        pbar = tqdm(self.train_loader,
-                    desc=f"Ep {self.current_epoch + 1}/{self.config.EPOCHS}")
+        pbar = tqdm(
+            self.train_loader,
+            desc=f"Ep {self.current_epoch + 1}/{self.config.EPOCHS}",
+        )
         accum_counter = 0  # Đếm số batch đã cộng dồn gradient
+        # Debug: thống kê độ dài chuỗi / time-steps cho CTC
+        min_input_len, max_input_len = None, None
+        min_target_len, max_target_len = None, None
+        debug_printed = 0
 
         for images, targets, target_lengths, _, _, _, country_ids in pbar:
             images = images.to(self.device)
@@ -192,6 +198,7 @@ class Trainer:
                     preds = self.model(images)
 
             # Đảm bảo logits cho CTC ở float32 (ổn định hơn so với float16)
+            # Expect: preds shape [B, T, Classes]
             preds = preds.float()
             # Chuẩn hoá logits: thay NaN/Inf bằng giá trị hữu hạn và giới hạn biên
             preds = torch.nan_to_num(preds, nan=0.0, posinf=20.0, neginf=-20.0)
@@ -204,16 +211,41 @@ class Trainer:
                 preds = preds * (1 - self.label_smoothing) + \
                     self.label_smoothing / num_classes
 
-            # preds_permuted = preds.permute(1, 0, 2)
-            preds_logs = preds.log_softmax(2)
-            preds_permuted = preds_logs.permute(1, 0, 2)
+            # Chuẩn hoá theo chiều lớp cho CTC: [B, T, Classes] -> log_probs
+            preds_logs = preds.log_softmax(2)  # dim=2: Classes
+            preds_permuted = preds_logs.permute(1, 0, 2)  # [T, B, Classes]
             input_lengths = torch.full(
                 size=(images.size(0),),
-                fill_value=preds.size(1),
+                fill_value=preds.size(1),  # T
                 dtype=torch.long
             )
             loss_per_sample = self.criterion(
                 preds_permuted, targets, input_lengths, target_lengths)
+
+            # Cập nhật thống kê lengths cho debug
+            with torch.no_grad():
+                batch_min_t = int(target_lengths.min().item())
+                batch_max_t = int(target_lengths.max().item())
+                t_in = int(input_lengths[0].item())
+                min_input_len = t_in if min_input_len is None else min(min_input_len, t_in)
+                max_input_len = t_in if max_input_len is None else max(max_input_len, t_in)
+                min_target_len = batch_min_t if min_target_len is None else min(min_target_len, batch_min_t)
+                max_target_len = batch_max_t if max_target_len is None else max(max_target_len, batch_max_t)
+
+                # In vài ví dụ dự đoán ở những batch đầu epoch đầu để xem model có ra ký tự không
+                if self.current_epoch == 0 and debug_printed < 2:
+                    beam_width_dbg = getattr(self.config, "CTC_BEAM_WIDTH", 1)
+                    decoded_dbg = decode_with_confidence(
+                        preds_logs, self.idx2char, beam_width=beam_width_dbg
+                    )
+                    print("\n[TRAIN DEBUG] Sample predictions (epoch 1):")
+                    for i in range(min(3, len(decoded_dbg))):
+                        # Không có labels_text trong train loop, chỉ in độ dài target
+                        pred_text, conf = decoded_dbg[i]
+                        print(
+                            f"  - target_len={target_lengths[i].item():2d} | pred='{pred_text}' | conf={conf:.4f}"
+                        )
+                    debug_printed += 1
 
             if self.use_focal_ctc:
                 # CTC có thể trả inf cho sample lỗi; clamp để tránh nan
@@ -274,6 +306,13 @@ class Trainer:
             print(
                 f"   ⚠️ Có {skipped_nan} batch loss ban đầu không hợp lệ (NaN/Inf) nhưng đã được chuẩn hoá bằng nan_to_num.")
 
+        # In thống kê độ dài CTC cho toàn epoch
+        if min_input_len is not None:
+            print(
+                f"   [CTC lengths] input_len: min={min_input_len}, max={max_input_len} | "
+                f"target_len: min={min_target_len}, max={max_target_len}"
+            )
+
         total_batches = len(self.train_loader)
         return epoch_loss / max(1, total_batches)
 
@@ -308,11 +347,12 @@ class Trainer:
                     preds = self.model(images)
 
 
-                preds_logs = preds.log_softmax(2)
+                # Expect: preds [B, T, Classes]
+                preds_logs = preds.log_softmax(2)  # dim=2: Classes
 
                 input_lengths = torch.full(
                     (images.size(0),),
-                    preds_logs.size(1),
+                    preds_logs.size(1),  # T
                     dtype=torch.long
                 )
                 loss = self.criterion_val(
@@ -330,6 +370,7 @@ class Trainer:
                 decoded_list = decode_with_confidence(
                     preds_logs, self.idx2char, beam_width=beam_width)
 
+                # Thống kê số lượng prediction rỗng để phát hiện collapse-to-blank
                 for i, (pred_text, conf) in enumerate(decoded_list):
                     gt_text = labels_text[i]
                     track_id = track_ids[i]
@@ -348,6 +389,14 @@ class Trainer:
                         f"{track_id},{pred_text};{conf:.4f}")
 
                 total_samples += len(labels_text)
+
+        # Đếm số prediction rỗng để debug
+        num_blank = sum(1 for p in all_preds if p == "")
+        if total_samples > 0:
+            print(
+                f"   [VAL DEBUG] blank predictions: {num_blank}/{total_samples} "
+                f"({num_blank / total_samples * 100:.2f}%)"
+            )
 
         avg_val_loss = val_loss / \
             val_loss_count if val_loss_count > 0 else float('nan')

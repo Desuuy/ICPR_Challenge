@@ -181,15 +181,17 @@ class MultiFrameSVTRv2(nn.Module):
         # --- Giai đoạn 5: CTC Decoder ---
         # RCTCDecoder input: [B, C, H=1, W']
         decoder_input = combined.permute(0, 2, 1).unsqueeze(2)  # [B, 384, 1, W']
-        logits = self.head(decoder_input)  # Output: [B, Classes, W'] hoặc [B, Classes, 1, W']
+        logits = self.head(decoder_input)
 
-        # Chuẩn hóa về [B, W', Classes]
-        if logits.dim() == 4:  # [B, Classes, 1, W']
-            logits = logits.squeeze(2)  # [B, Classes, W']
-
-        # Chuẩn hoá về [B, W', Classes] cho CTC (không phụ thuộc số lớp cụ thể)
-        if logits.dim() == 3:  # [B, Classes, W']
-            logits = logits.permute(0, 2, 1)  # [B, W', Classes]
+        # Chuẩn hoá về [B, T, Classes] cho CTC:
+        # - Decoder trả về [B, T, Classes] trong chế độ training.
+        # - Nếu (tuỳ implementation) head trả về [B, Classes, 1, T] thì đưa về [B, T, Classes].
+        if logits.dim() == 4:  # ví dụ [B, Classes, 1, T]
+            b, c, h2, w2 = logits.size()
+            logits = logits.view(b, c, h2 * w2).permute(0, 2, 1)  # [B, T, Classes]
+        elif logits.dim() == 3:
+            # Giữ nguyên nếu đã là [B, T, Classes]
+            pass
 
         # Apply temperature scaling
         if self.use_temp_scaling and hasattr(self, 'temp_scaling'):
@@ -197,9 +199,9 @@ class MultiFrameSVTRv2(nn.Module):
 
         # Sau dòng: logits = self.head(...)
         # print(f"[DEBUG] head output shape: {logits.shape}")
-        # print(f"[DEBUG] Expected: [B={b}, W'={w_f}, Classes=37]")
+        # print(f"[DEBUG] Expected: [B={b}, T={w_f}, Classes={self.num_classes}]")
 
-        # return logits.log_softmax(2)  # [B, W', Classes]
+        # Trainer và hàm decode mong đợi logits dạng [B, T, Classes]
         return logits
 
     def verify_architecture(self) -> dict:
