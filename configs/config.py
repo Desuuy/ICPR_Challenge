@@ -11,7 +11,7 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 @dataclass
 class Config:
 
-    # File config nếu train tiếp 
+    # File config nếu train tiếp
     SCHEDULER_TYPE: str = "cosine"  # "onecycle" or "cosine"
     LEARNING_RATE: float = 0.000325
     EPOCHS: int = 1
@@ -32,15 +32,15 @@ class Config:
     # MAX width cho MSR phải khớp backbone SVTRv2 (max_sz=[32, 128])
     MSR_WIDTH_MAX: int = 256  # Chỉnh từ 128 -> 256
 
-    DROPOUT: float = 0.05   
+    DROPOUT: float = 0.05
 
     # Focus on hard samples (sample-level weighting)
     # Bật Focal Loss CTC / nhánh GTC khi đã debug xong.
     USE_FOCAL_CTC: bool = False
     # Nhánh GTC/SMTR (GTCLoss + GTCDecoder) – giữ False để pipeline CTC cơ bản ổn định.
     USE_GTC: bool = False
-    # Bật STN 
-    USE_STN: bool = False   
+    # Bật STN
+    USE_STN: bool = False
 
     # Super-Resolution (MF-LPR SR) - requires sr_model/ (LP-Diff or similar)
     USE_SR: bool = False
@@ -54,17 +54,17 @@ class Config:
     # Training hyperparameters
     BATCH_SIZE: int = 32
     SEED: int = 42
-    NUM_WORKERS: int = 10
-    WEIGHT_DECAY: float = 0.05 
-    GRAD_CLIP: float = 1.0  
+    NUM_WORKERS: int = 0  # 0 tránh lỗi "paging file too small" khi spawn nhiều worker load CUDA trên Windows
+    WEIGHT_DECAY: float = 0.05
+    GRAD_CLIP: float = 1.0
     # Gradient accumulation steps (Effective Batch = BATCH_SIZE * ACCUM_STEPS)
     ACCUM_STEPS: int = 8
     SPLIT_RATIO: float = 0.9
 
-    # Same augmentation for all 5 frames 
-    SAME_AUG_PER_SAMPLE: bool = True  
+    # Same augmentation for all 5 frames
+    SAME_AUG_PER_SAMPLE: bool = True
     # Dropout in STN/Fusion (0 = disabled)
-    
+
     USE_CUDNN_BENCHMARK: bool = False
 
     USE_TEMP_SCALING: bool = False
@@ -73,10 +73,9 @@ class Config:
     OVERFIT_NUM_TRAIN_SAMPLES: int = 0
     OVERFIT_NUM_VAL_SAMPLES: int = 0
 
-  
     # Experiment tracking
     # "crnn" or "restran" or "mf_svtrv2"
-    MODEL_TYPE: str = "mf_svtrv2" 
+    MODEL_TYPE: str = "mf_svtrv2"
     EXPERIMENT_NAME: str = MODEL_TYPE
     AUGMENTATION_LEVEL: str = "light"  # "full" or "light"
 
@@ -93,8 +92,7 @@ class Config:
     CHAR_DICT_PATH: str = field(default_factory=lambda: os.path.join(
         _PROJECT_ROOT, "EN_symbol_dict.txt"))
 
-
-    # Data paths 
+    # Data paths
     DATA_ROOT: str = field(default_factory=lambda: os.path.join(
         _PROJECT_ROOT, "Data", "train"))
     TEST_DATA_ROOT: str = field(default_factory=lambda: os.path.join(
@@ -102,7 +100,7 @@ class Config:
     VAL_SPLIT_FILE: str = field(default_factory=lambda: os.path.join(
         _PROJECT_ROOT, "Data", "val_tracks.json"))
     SUBMISSION_FILE: str = "submission.txt"
-        
+
     SR_CHECKPOINT_PATH: str = field(default_factory=lambda: os.path.join(
         _PROJECT_ROOT, "weights", "gen_best_psnr.pth"))
     SR_CONFIG_PATH: str = field(default_factory=lambda: os.path.join(
@@ -133,7 +131,7 @@ class Config:
                              4, 8, 12])    # Khớp num_heads
 
     DEVICE: torch.device = field(default_factory=lambda: torch.device(
-        'cuda' if torch.cuda.is_available() else 'cpu')) 
+        'cuda' if torch.cuda.is_available() else 'cpu'))
     OUTPUT_DIR: str = "results"
 
     # Derived attributes (computed in __post_init__)
