@@ -57,7 +57,8 @@ def collect_tracks(root_dir: str):
             if isinstance(data, list) and data:
                 data = data[0]
 
-        label = data.get("plate_text") or data.get("license_plate") or data.get("text")
+        label = data.get("plate_text") or data.get(
+            "license_plate") or data.get("text")
         if not label:
             continue
 
