@@ -41,3 +41,6 @@ results/
 # Weights: only push config, ignore checkpoints
 weights/*
 !weights/config.yml
+
+# Documentation files
+docs/
