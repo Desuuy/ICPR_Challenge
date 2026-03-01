@@ -20,9 +20,17 @@ Script này sẽ:
 Bạn có thể dùng CSV này cho:
     - `prepare_openocr_input.py` → tạo list ảnh cho OpenOCR.
     - `make_submission.py` → fusion theo track_id.
+
+Đường dẫn: truyền khi chạy (--root-dir, --output, --rel-to).
+Hoặc sửa 3 hằng số dưới đây rồi chạy không tham số: python scripts/build_tracks_csv_from_dataset.py
 """
 
 from __future__ import annotations
+
+# --- Sửa 3 dòng này nếu muốn mặc định, rồi chạy script không cần truyền tham số ---
+DEFAULT_ROOT_DIR = r"C:\Users\anhhu\MultiFrame-LPR\data\blind_test"
+DEFAULT_OUTPUT_CSV = r"C:\Users\anhhu\MultiFrame-LPR\data\tracks.csv"
+DEFAULT_REL_TO = r"C:\Users\anhhu\MultiFrame-LPR"
 
 import argparse
 import csv
@@ -106,23 +114,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--root-dir",
         type=str,
-        required=True,
-        help="Root directory containing track_* folders (e.g., data/train or data/public_test).",
+        default=DEFAULT_ROOT_DIR,
+        help="Root directory containing track_* folders (default: DEFAULT_ROOT_DIR in script).",
     )
     parser.add_argument(
         "--output",
         type=str,
-        required=True,
-        help="Output CSV path (e.g., data/tracks.csv).",
+        default=DEFAULT_OUTPUT_CSV,
+        help="Output CSV path (default: DEFAULT_OUTPUT_CSV in script).",
     )
     parser.add_argument(
         "--rel-to",
         type=str,
-        default=".",
-        help=(
-            "Base directory to which image paths in CSV will be relative. "
-            "Default is current working directory."
-        ),
+        default=DEFAULT_REL_TO,
+        help="Base dir for relative image_path in CSV (default: DEFAULT_REL_TO in script).",
     )
     return parser.parse_args()
 
