@@ -18,6 +18,7 @@ from datetime import datetime
 
 class Tee:
     """Ghi đồng thời ra stdout và file."""
+
     def __init__(self, filepath: str):
         self.file = open(filepath, 'w', encoding='utf-8')
         self.stdout = sys.stdout
@@ -34,6 +35,7 @@ class Tee:
     def close(self):
         self.file.close()
         sys.stdout = self.stdout
+
 
 # Giảm phân mảnh CUDA (tránh OOM do fragmentation)
 os.environ.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True")
@@ -144,7 +146,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Override n_timestep cho SR inference (10=nhanh, 100=mặc định, 1000=chất lượng cao; None=theo LP-Diff.json)",
     )
-    
+
     # ============================================================
     # 2 FLAGS RIÊNG BIỆT CHO 2 LOẠI WEIGHTS
     # ============================================================
@@ -158,7 +160,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Không load checkpoint từ previous training (results/mf_svtrv2_best.pth) - train from scratch",
     )
-    
+
     return parser.parse_args()
 
 
@@ -233,7 +235,8 @@ def main():
 
 def _run_training(args, config):
     # Submission mode: bật bằng --submission-mode (CLI) hoặc config.SUBMISSION_MODE = True
-    submission_mode = args.submission_mode or getattr(config, "SUBMISSION_MODE", False)
+    submission_mode = args.submission_mode or getattr(
+        config, "SUBMISSION_MODE", False)
 
     # Làm trống cache CUDA và in bộ nhớ GPU
     if config.DEVICE.type == "cuda":
@@ -249,18 +252,20 @@ def _run_training(args, config):
     print(f"   LEARNING_RATE: {config.LEARNING_RATE}")
     print(f"   DEVICE: {config.DEVICE}")
     print(f"   USE_SR: {getattr(config, 'USE_SR', False)}")
-    
+
     # Hiển thị scheduler type
     scheduler_type = getattr(config, 'SCHEDULER_TYPE', 'onecycle')
     print(f"   SCHEDULER: {scheduler_type}")
-    
+
     # Hiển thị loading flags
     print(f"   LOAD_PRETRAINED: {not args.no_pretrained}")
     print(f"   LOAD_CHECKPOINT: {not args.no_checkpoint}")
-    
+
     use_focal = getattr(config, 'USE_FOCAL_CTC', False)
-    print(f"   USE_FOCAL_CTC: {use_focal}  ->  LOSS: {'Focal CTC' if use_focal else 'CTC'}")
-    print(f"   SUBMISSION_MODE: {submission_mode} (CLI={args.submission_mode}, config={getattr(config, 'SUBMISSION_MODE', False)})")
+    print(
+        f"   USE_FOCAL_CTC: {use_focal}  ->  LOSS: {'Focal CTC' if use_focal else 'CTC'}")
+    print(
+        f"   SUBMISSION_MODE: {submission_mode} (CLI={args.submission_mode}, config={getattr(config, 'SUBMISSION_MODE', False)})")
     if submission_mode:
         print(f"   TEST_DATA_ROOT: {config.TEST_DATA_ROOT}")
 
@@ -279,9 +284,9 @@ def _run_training(args, config):
         'seed': config.SEED,
         'augmentation_level': config.AUGMENTATION_LEVEL,
         'same_aug_per_sample': getattr(config, 'SAME_AUG_PER_SAMPLE', True),
-        'use_msr': getattr(config, 'USE_MSR', False), 
-        'msr_width_min': getattr(config, 'MSR_WIDTH_MIN', 64),  
-        'msr_width_max': getattr(config, 'MSR_WIDTH_MAX', 256),  
+        'use_msr': getattr(config, 'USE_MSR', False),
+        'msr_width_min': getattr(config, 'MSR_WIDTH_MIN', 64),
+        'msr_width_max': getattr(config, 'MSR_WIDTH_MAX', 256),
     }
     # Optional: initialize super-resolution enhancer
     sr_enhancer = None
@@ -290,24 +295,31 @@ def _run_training(args, config):
         print("🔍 KIỂM TRA TÍCH HỢP MF-LPR SUPER-RESOLUTION")
         print("="*60)
         if not getattr(config, "SR_CHECKPOINT_PATH", ""):
-            print("⚠️ USE_SR=True nhưng SR_CHECKPOINT_PATH đang rỗng -> SR sẽ không được dùng.")
-            print("   💡 Để bật SR, hãy set SR_CHECKPOINT_PATH trong config hoặc dùng --sr-checkpoint-path")
+            print(
+                "⚠️ USE_SR=True nhưng SR_CHECKPOINT_PATH đang rỗng -> SR sẽ không được dùng.")
+            print(
+                "   💡 Để bật SR, hãy set SR_CHECKPOINT_PATH trong config hoặc dùng --sr-checkpoint-path")
         else:
             try:
-                print(f"📦 Đang load checkpoint SR: {config.SR_CHECKPOINT_PATH}")
+                print(
+                    f"📦 Đang load checkpoint SR: {config.SR_CHECKPOINT_PATH}")
                 sr_enhancer = MF_LPR_SR(
                     checkpoint_path=config.SR_CHECKPOINT_PATH,
-                    config_path=getattr(config, "SR_CONFIG_PATH", "sr_model/config/LP-Diff.json"),
+                    config_path=getattr(
+                        config, "SR_CONFIG_PATH", "sr_model/config/LP-Diff.json"),
                     device=config.DEVICE,
                     n_timestep_override=getattr(config, "SR_N_TIMESTEP", None),
                 )
                 print("✅ MF-LPR Super-Resolution đã được khởi tạo thành công!")
                 print(f"   - Device: {config.DEVICE}")
                 print(f"   - Checkpoint: {config.SR_CHECKPOINT_PATH}")
-                print(f"   - Config: {getattr(config, 'SR_CONFIG_PATH', 'sr_model/config/LP-Diff.json')}")
+                print(
+                    f"   - Config: {getattr(config, 'SR_CONFIG_PATH', 'sr_model/config/LP-Diff.json')}")
                 sr_nt = getattr(config, 'SR_N_TIMESTEP', None)
-                print(f"   - n_timestep: {sr_nt if sr_nt is not None else 'theo LP-Diff.json'}")
-                print("   - Status: SR sẽ được áp dụng cho TẤT CẢ frames trong dataset (train/val/test)")
+                print(
+                    f"   - n_timestep: {sr_nt if sr_nt is not None else 'theo LP-Diff.json'}")
+                print(
+                    "   - Status: SR sẽ được áp dụng cho TẤT CẢ frames trong dataset (train/val/test)")
                 print("="*60 + "\n")
             except Exception as e:
                 print(f"❌ Không thể khởi tạo MF_LPR_SR, sẽ tắt SR. Lý do: {e}")
@@ -358,7 +370,8 @@ def _run_training(args, config):
                 pin_memory=True
             )
         else:
-            print(f"⚠️ WARNING: Test data not found at {config.TEST_DATA_ROOT}")
+            print(
+                f"⚠️ WARNING: Test data not found at {config.TEST_DATA_ROOT}")
 
         val_loader = None
     else:
@@ -434,9 +447,12 @@ def _run_training(args, config):
         arch_info = model.verify_architecture()
         print(f"\n✅ Model đã được khởi tạo với:")
         print(f"   - STN: {'✅' if arch_info['has_stn'] else '❌'}")
-        print(f"   - Backbone: {arch_info['backbone_type']} {'✅' if arch_info['has_backbone'] else '❌'}")
-        print(f"   - Fusion: {arch_info['fusion_type']} {'✅' if arch_info['has_fusion'] else '❌'}")
-        print(f"   - Head: {arch_info['head_type']} {'✅' if arch_info['has_head'] else '❌'}")
+        print(
+            f"   - Backbone: {arch_info['backbone_type']} {'✅' if arch_info['has_backbone'] else '❌'}")
+        print(
+            f"   - Fusion: {arch_info['fusion_type']} {'✅' if arch_info['has_fusion'] else '❌'}")
+        print(
+            f"   - Head: {arch_info['head_type']} {'✅' if arch_info['has_head'] else '❌'}")
 
         # ============================================================
         # STEP 1: LOAD PRETRAINED UNIREC WEIGHTS (weights/best.pth)
@@ -456,7 +472,8 @@ def _run_training(args, config):
                     print(f"   ❌ Failed to load pretrained weights: {e}")
                 print("="*60 + "\n")
             else:
-                print(f"\n⚠️ Pretrained path không tồn tại: {config.PRETRAINED_PATH}\n")
+                print(
+                    f"\n⚠️ Pretrained path không tồn tại: {config.PRETRAINED_PATH}\n")
         else:
             if args.no_pretrained:
                 print(f"\n" + "="*60)
@@ -503,16 +520,21 @@ def _run_training(args, config):
         # Đếm params từng component
         if hasattr(model, 'stn') and config.USE_STN:
             stn_params = sum(p.numel() for p in model.stn.parameters())
-            print(f"   STN params: {stn_params:,} ({stn_params*4/(1024**2):.2f} MB)")
+            print(
+                f"   STN params: {stn_params:,} ({stn_params*4/(1024**2):.2f} MB)")
         if hasattr(model, 'backbone'):
-            backbone_params = sum(p.numel() for p in model.backbone.parameters())
-            print(f"   Backbone params: {backbone_params:,} ({backbone_params*4/(1024**2):.2f} MB)")
+            backbone_params = sum(p.numel()
+                                  for p in model.backbone.parameters())
+            print(
+                f"   Backbone params: {backbone_params:,} ({backbone_params*4/(1024**2):.2f} MB)")
         if hasattr(model, 'fusion'):
             fusion_params = sum(p.numel() for p in model.fusion.parameters())
-            print(f"   Fusion params: {fusion_params:,} ({fusion_params*4/(1024**2):.2f} MB)")
+            print(
+                f"   Fusion params: {fusion_params:,} ({fusion_params*4/(1024**2):.2f} MB)")
         if hasattr(model, 'head'):
             head_params = sum(p.numel() for p in model.head.parameters())
-            print(f"   Head params: {head_params:,} ({head_params*4/(1024**2):.2f} MB)")
+            print(
+                f"   Head params: {head_params:,} ({head_params*4/(1024**2):.2f} MB)")
 
     elif config.MODEL_TYPE == "restran":
         print(f"   Type: ResTranOCR")
@@ -522,7 +544,8 @@ def _run_training(args, config):
         print(f"   STN: {'✅ ENABLED' if config.USE_STN else '❌ DISABLED'}")
 
     total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    trainable_params = sum(p.numel()
+                           for p in model.parameters() if p.requires_grad)
     param_size_mb = total_params * 4 / (1024 ** 2)
 
     print(f"\n   📊 Total params: {total_params:,} ({param_size_mb:.2f} MB)")
@@ -539,45 +562,51 @@ def _run_training(args, config):
     # ============================================================
     checkpoint_loaded = False
     if not args.no_checkpoint:
-        checkpoint_path = os.path.join(config.OUTPUT_DIR, f"{config.EXPERIMENT_NAME}_best.pth")
+        checkpoint_path = os.path.join(
+            config.OUTPUT_DIR, f"{config.EXPERIMENT_NAME}_best.pth")
         if os.path.exists(checkpoint_path):
             print("="*60)
             print("🔄 STEP 2: LOADING CHECKPOINT FROM PREVIOUS TRAINING")
             print("="*60)
             print(f"   Path: {checkpoint_path}")
             try:
-                model.load_state_dict(torch.load(checkpoint_path, map_location=config.DEVICE))
+                model.load_state_dict(torch.load(
+                    checkpoint_path, map_location=config.DEVICE))
                 checkpoint_loaded = True
                 print(f"   ✅ Successfully loaded checkpoint!")
                 print(f"   📊 This OVERRIDES pretrained UniRec weights")
-                
+
                 # Hiển thị scheduler warning
                 scheduler_type = getattr(config, 'SCHEDULER_TYPE', 'onecycle')
                 print(f"   📊 Scheduler: {scheduler_type}")
-                
+
                 if scheduler_type == 'cosine':
                     print(f"   ✅ Cosine scheduler: Fine-tuning from checkpoint")
                 elif scheduler_type == 'onecycle':
                     print(f"   ⚠️  WARNING: OneCycleLR will RESTART LR curve!")
-                    print(f"       Consider using SCHEDULER_TYPE='cosine' for fine-tuning")
-                
+                    print(
+                        f"       Consider using SCHEDULER_TYPE='cosine' for fine-tuning")
+
             except Exception as e:
                 print(f"   ❌ Failed to load checkpoint: {e}")
-                print(f"   Will use {'pretrained' if pretrained_loaded else 'random'} weights")
-            
+                print(
+                    f"   Will use {'pretrained' if pretrained_loaded else 'random'} weights")
+
             print("="*60 + "\n")
         else:
             print("="*60)
             print("ℹ️  STEP 2: NO CHECKPOINT FOUND")
             print("="*60)
             print(f"   Path checked: {checkpoint_path}")
-            print(f"   Starting from {'pretrained UniRec' if pretrained_loaded else 'random'} weights")
+            print(
+                f"   Starting from {'pretrained UniRec' if pretrained_loaded else 'random'} weights")
             print("="*60 + "\n")
     else:
         print("="*60)
         print("⚙️  STEP 2: SKIP CHECKPOINT (--no-checkpoint flag)")
         print("="*60)
-        print(f"   Training from {'pretrained UniRec' if pretrained_loaded else 'random'} weights")
+        print(
+            f"   Training from {'pretrained UniRec' if pretrained_loaded else 'random'} weights")
         print("="*60 + "\n")
 
     # ============================================================
@@ -619,14 +648,17 @@ def _run_training(args, config):
         print("="*60)
 
         exp_name = config.EXPERIMENT_NAME
-        best_model_path = os.path.join(config.OUTPUT_DIR, f"{exp_name}_best.pth")
+        best_model_path = os.path.join(
+            config.OUTPUT_DIR, f"{exp_name}_best.pth")
         if os.path.exists(best_model_path):
             print(f"📦 Loading best checkpoint: {best_model_path}")
-            model.load_state_dict(torch.load(best_model_path, map_location=config.DEVICE))
+            model.load_state_dict(torch.load(
+                best_model_path, map_location=config.DEVICE))
         else:
             print("⚠️ No best checkpoint found, using final model weights")
 
-        trainer.predict_test(test_loader, output_filename=f"submission_{exp_name}_final.txt")
+        trainer.predict_test(
+            test_loader, output_filename=f"submission_{exp_name}_final.txt")
 
 
 if __name__ == "__main__":
