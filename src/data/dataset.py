@@ -96,17 +96,17 @@ class MultiFrameDataset(Dataset):
         self.same_aug_per_sample = same_aug_per_sample
         # Optional super-resolution enhancer (MF_LPR_SR hoặc tương tự)
         self.sr_enhancer = sr_enhancer
-        self.use_msr = use_msr 
-        self.msr_width_min = msr_width_min 
-        self.msr_width_max = msr_width_max 
+        self.use_msr = use_msr
+        self.msr_width_min = msr_width_min
+        self.msr_width_max = msr_width_max
         # MSR (Multi-Size Resizing) theo SVTRv2 cho training
         self.use_msr_svtv2 = mode == 'train' and augmentation_level == "msr_svtv2"
 
         if mode == 'train':
             # Training: apply augmentation on the fly
             if augmentation_level == "light":
-                self.transform = get_light_transforms(img_height, img_width)       
-            #elif augmentation_level == "msr_svtv2":
+                self.transform = get_light_transforms(img_height, img_width)
+            # elif augmentation_level == "msr_svtv2":
                 # MSR: resize + padding đa tỉ lệ sẽ làm thủ công trong __getitem__
                 # Transform chỉ còn augment + normalize + ToTensor.
             #    self.transform = get_msr_svtv2_transforms()
@@ -128,10 +128,10 @@ class MultiFrameDataset(Dataset):
                 img_width_max=self.msr_width_max,
                 padding=True
             )
-            print(f"📐 MSR enabled: width range [{self.msr_width_min}, {self.msr_width_max}]")
+            print(
+                f"📐 MSR enabled: width range [{self.msr_width_min}, {self.msr_width_max}]")
         else:
             self.msr_transform = None
-        
 
         print(f"[{mode.upper()}] Scanning: {root_dir}")
         abs_root = os.path.abspath(root_dir)
@@ -345,7 +345,6 @@ class MultiFrameDataset(Dataset):
 
             images_list.append(image_tensor)
 
-
         images_tensor = torch.stack(images_list, dim=0)
 
         # Optional: apply super-resolution enhancement per-sample
@@ -387,7 +386,8 @@ class MultiFrameDataset(Dataset):
         torch.Tensor,
     ]:
         """Custom collate function for DataLoader."""
-        images, targets, target_lengths, labels_text, track_ids, img_paths, country_ids = zip(*batch)
+        images, targets, target_lengths, labels_text, track_ids, img_paths, country_ids = zip(
+            *batch)
         images = torch.stack(images, 0)
         targets = torch.cat(targets)
         target_lengths = torch.tensor(target_lengths, dtype=torch.long)
