@@ -45,13 +45,14 @@ def run_single_batch_check(
         target_lengths,  # [B]
         labels_text,     # tuple[str]
         track_ids,       # tuple[str]
-        img_paths_batch, # tuple[tuple[str]]
+        img_paths_batch,  # tuple[tuple[str]]
         country_ids,     # [B]
     ) = batch
 
     print("=== BATCH SHAPES ===")
     print(f"images:         {tuple(images.shape)}")
-    print(f"targets:        {tuple(targets.shape)} (sum(target_lengths)={int(target_lengths.sum())})")
+    print(
+        f"targets:        {tuple(targets.shape)} (sum(target_lengths)={int(target_lengths.sum())})")
     print(f"target_lengths: {tuple(target_lengths.shape)}")
     print(f"country_ids:    {tuple(country_ids.shape)}")
     print(f"examples labels: {list(labels_text)[:3]}")
@@ -97,7 +98,8 @@ def run_single_batch_check(
         print("⚠️ Loss không hữu hạn (NaN/Inf) – cần xem lại pipeline.")
 
     # Decode để xem mô hình đang dự đoán gì (dù là random hoặc pretrained)
-    decoded = decode_with_confidence(logits, config.IDX2CHAR, beam_width=config.CTC_BEAM_WIDTH)
+    decoded = decode_with_confidence(
+        logits, config.IDX2CHAR, beam_width=config.CTC_BEAM_WIDTH)
 
     print("\n=== VÍ DỤ PREDICTIONS (tối đa 5 mẫu) ===")
     for i, (pred_text, conf) in enumerate(decoded[:5]):
@@ -148,7 +150,8 @@ def main():
     )
 
     if len(train_ds) == 0:
-        raise RuntimeError("Dataset train rỗng – kiểm tra DATA_ROOT / cấu trúc track_*.")
+        raise RuntimeError(
+            "Dataset train rỗng – kiểm tra DATA_ROOT / cấu trúc track_*.")
 
     # Lấy tối đa 8 sample đầu để debug nhanh
     subset_indices = list(range(min(8, len(train_ds))))
@@ -173,8 +176,10 @@ def main():
     # Nếu có checkpoint đã train trước đó, load vào để debug chất lượng sau finetune.
     # Đường dẫn gợi ý: weights/mf_svtrv2_best.pth (như bạn nêu).
     ckpt_candidates = [
-        os.path.join(os.path.dirname(__file__), "weights", "mf_svtrv2_best.pth"),
-        os.path.join(os.path.dirname(__file__), "weights", "ck-mf_svtrv2_best.pth"),
+        os.path.join(os.path.dirname(__file__),
+                     "weights", "mf_svtrv2_best.pth"),
+        os.path.join(os.path.dirname(__file__),
+                     "weights", "ck-mf_svtrv2_best.pth"),
     ]
     loaded_ckpt = None
     for p in ckpt_candidates:
@@ -197,7 +202,8 @@ def main():
             v = state[pe_key]
             target = model_state[pe_key]
             if v.shape != target.shape:
-                print(f"   🔄 Interpolating pos_embed: {tuple(v.shape)} -> {tuple(target.shape)}")
+                print(
+                    f"   🔄 Interpolating pos_embed: {tuple(v.shape)} -> {tuple(target.shape)}")
                 # Nội suy theo H,W về đúng kích thước backbone hiện tại
                 v_interp = F.interpolate(
                     v,
@@ -222,4 +228,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
