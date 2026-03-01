@@ -73,9 +73,11 @@ def build_model(config: Config) -> MultiFrameSVTRv2:
         state = torch.load(best_ckpt, map_location=config.DEVICE)
         model.load_state_dict(state)
     else:
-        print(f"⚠️ Không tìm thấy {best_ckpt}, dùng PRETRAINED_PATH: {config.PRETRAINED_PATH}")
+        print(
+            f"⚠️ Không tìm thấy {best_ckpt}, dùng PRETRAINED_PATH: {config.PRETRAINED_PATH}")
         if os.path.exists(config.PRETRAINED_PATH):
-            state = torch.load(config.PRETRAINED_PATH, map_location=config.DEVICE)
+            state = torch.load(config.PRETRAINED_PATH,
+                               map_location=config.DEVICE)
             if isinstance(state, dict) and "state_dict" in state:
                 state = state["state_dict"]
             model.load_state_dict(state, strict=False)
@@ -154,7 +156,8 @@ def test_and_analyze_ctc(
                 max_len = max(len(gt_text), len(pred_text))
                 for pos in range(max_len):
                     char_gt = gt_text[pos] if pos < len(gt_text) else "[EMPTY]"
-                    char_pred = pred_text[pos] if pos < len(pred_text) else "[EMPTY]"
+                    char_pred = pred_text[pos] if pos < len(
+                        pred_text) else "[EMPTY]"
                     if char_gt != char_pred:
                         confusion_counter[(char_gt, char_pred, pos)] += 1
 
